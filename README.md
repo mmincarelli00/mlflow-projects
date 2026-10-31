@@ -12,9 +12,9 @@
 - [Purpose and context](#purpose-and-context)
 - [Repository layout](#repository-layout)
 - [The three files](#the-three-files)
-  - [`synthetic_data.py`](#synthetic_datapy-a-stand-in-for-real-kpm-data)
-  - [`features.py`](#featurespy-features-and-labels)
-  - [`train.py`](#trainpy-the-comparison-harness)
+  - [`RLF_synthetic_data.py`](#rlf_synthetic_datapy-a-stand-in-for-real-kpm-data)
+  - [`RLF_features.py`](#rlf_featurespy-features-and-labels)
+  - [`RLF_train.py`](#rlf_trainpy-the-comparison-harness)
 - [Quick start](#quick-start)
 - [Evaluation method](#evaluation-method)
 - [Model families](#model-families)
@@ -75,7 +75,7 @@ The table below maps the synthetic columns to the nodes and interfaces that coul
 
 1. **xApp on the near-RT RIC (best fit).** An xApp subscribes over E2 to KPM reports from the O-DU and O-CU and to RRC events, and streams them to a store such as Kafka or InfluxDB. This gives the per-UE, per-second table the models expect, and the same xApp can later run the trained model.
 2. **SMO and O1 (batch).** Pull counters, alarms, configuration and trace files through the SMO. Slower and coarser, but it needs no near-RT RIC and is available on most commercial networks. Good for labels, configuration and cell-level context.
-3. **Hybrid (recommended starting point).** E2 for fast per-UE KPIs, O1 for labels, configuration and cell counters, joined by UE, cell and time into one CSV for `train.py`.
+3. **Hybrid (recommended starting point).** E2 for fast per-UE KPIs, O1 for labels, configuration and cell counters, joined by UE, cell and time into one CSV for `RLF_train.py`.
 4. **Test bed.** srsRAN or OpenAirInterface with an E2 agent, or Colosseum, OpenRAN Gym and ColO-RAN, expose the same interfaces without a live network.
 
 **Closing the loop:** a model trained and tracked in the SMO (MLflow) can be deployed to the near-RT RIC as an xApp, or to the non-RT RIC as an rApp, with policies and models delivered over **A1** and mitigation actions (for example a handover or parameter change) sent back to the RAN over **E2-RC**.
@@ -92,25 +92,27 @@ The pipeline has three parts:
 
 | Step | File | Job |
 | --- | --- | --- |
-| 1 | `synthetic_data.py` | Creates plausible per-UE KPI data with known failures |
-| 2 | `features.py` | Turns that data into labelled model inputs |
-| 3 | `train.py` | Trains and compares four model families under identical conditions, logging every run to MLflow |
+| 1 | `RLF_synthetic_data.py` | Creates plausible per-UE KPI data with known failures |
+| 2 | `RLF_features.py` | Turns that data into labelled model inputs |
+| 3 | `RLF_train.py` | Trains and compares four model families under identical conditions, logging every run to MLflow |
 
 ## Repository layout
 
 ```text
 .
-├── synthetic_data.py   # synthetic per-UE, per-second KPI generator
-├── features.py         # 105 features + RLF label
-├── train.py            # training, evaluation and MLflow logging
-└── requirements.txt    # mlflow, numpy, pandas, scikit-learn, xgboost (+ optional torch)
+├── RLF_synthetic_data.py   # synthetic per-UE, per-second KPI generator
+├── RLF_features.py         # 105 features + RLF label
+├── RLF_train.py            # training, evaluation and MLflow logging
+├── RLF_requirements.txt    # mlflow, numpy, pandas, scikit-learn, xgboost (+ optional torch)
+└── docs/
+    └── oran-architecture.png
 ```
 
 ## The three files
 
 Each file does one job in a chain: generate data, build features and labels, then train and compare models.
 
-### `synthetic_data.py`: a stand-in for real KPM data
+### `RLF_synthetic_data.py`: a stand-in for real KPM data
 
 **Scope:** `generate_dataset(n_ues=60, n_seconds=3600, n_cells=12, seed=7, episode_rate=1/400, sudden_rlf_rate=1/6000)` returns one row per UE per second (216,000 rows in the default run).
 
@@ -166,18 +168,18 @@ The network does not see an RLF directly, because the UE declares it (for exampl
 3. Resample each UE to a contiguous 1-second grid and join per-UE records with cell counters and configuration by cell and time. Fill short gaps carefully and mark long ones, because `make_labels` assumes no missing seconds per UE.
 4. Keep a UE's rows linked across handovers (the identifier often changes with the cell), so rolling features follow the UE.
 5. Derive `rlf` from the chosen failure event.
-6. Export one CSV with the same column names and run `python train.py --csv real_kpm.csv --horizon 30`.
+6. Export one CSV with the same column names and run `python RLF_train.py --csv real_kpm.csv --horizon 30`.
 
 **Cautions**
 
-- Per-UE, per-second reporting is not available from every vendor or E2 node. If a column such as `ul_sinr`, `ta`, `phr` or `harq_retx` is missing, remove it from `features.py` (the raw columns and the rolling list) and from the GRU's channel list, and bump `FEATURE_VERSION`.
+- Per-UE, per-second reporting is not available from every vendor or E2 node. If a column such as `ul_sinr`, `ta`, `phr` or `harq_retx` is missing, remove it from `RLF_features.py` (the raw columns and the rolling list) and from the GRU's channel list, and bump `FEATURE_VERSION`.
 - Positives will be much scarcer, so expect lower PR-AUC, and consider a longer horizon or more data.
 - UE-level traces are personal data in most jurisdictions: pseudonymize and agree retention with the operator.
 - Models trained on one vendor or cell type may need retraining elsewhere; the cell hold-out score is the early warning.
 
 *This mapping comes from general 3GPP and O-RAN knowledge and has not been checked against a specific vendor's data model.*
 
-### `features.py`: features and labels
+### `RLF_features.py`: features and labels
 
 **Scope:** turns the raw rows into 105 model inputs plus a label (feature version `rlf_features_v1`).
 
@@ -218,7 +220,7 @@ In real data the `rlf` column, and therefore every label, comes from evidence on
 
 *This describes general 3GPP behavior and has not been checked against a specific vendor's data model.*
 
-### `train.py`: the comparison harness
+### `RLF_train.py`: the comparison harness
 
 **Scope:** trains the model families on identical splits, scores them with identical metrics and logs each family as one MLflow run (experiment `oran-rlf-prediction`).
 
@@ -235,16 +237,16 @@ In real data the `rlf` column, and therefore every label, comes from evidence on
 ## Quick start
 
 ```bash
-pip install -r requirements.txt          # add torch>=2.2 for the GRU
+pip install -r RLF_requirements.txt          # add torch>=2.2 for the GRU
 
 # 5 s horizon, no GRU
-python train.py --horizon 5
+python RLF_train.py --horizon 5
 
 # 30 s horizon, GRU with a 60 s window
-python train.py --horizon 30 --gru-window 60
+python RLF_train.py --horizon 30 --gru-window 60
 
-# --seed sets the data seed; the model seed is the SEED constant in train.py
-python train.py --horizon 30 --seed 8
+# --seed sets the data seed; the model seed is the SEED constant in RLF_train.py
+python RLF_train.py --horizon 30 --seed 8
 
 mlflow ui                                # http://127.0.0.1:5000
 ```
@@ -343,7 +345,7 @@ Three different "windows" appear in this project:
 | Name | Where | Meaning |
 | --- | --- | --- |
 | GRU window (30 or 60 s) | `--gru-window` | How much past the GRU reads as input |
-| Rolling-feature windows (5 s and 30 s) | `features.py` | Spans over which means, standard deviations, minimums and slopes are computed for the tabular models |
+| Rolling-feature windows (5 s and 30 s) | `RLF_features.py` | Spans over which means, standard deviations, minimums and slopes are computed for the tabular models |
 | Horizon (5 or 30 s) | `--horizon` | How far ahead the label looks |
 
 #### Tabular models versus the sequence model
