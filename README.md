@@ -21,6 +21,7 @@
 - [Results of the comparison tests](#results-of-the-comparison-tests)
 - [Conclusions and caveats](#conclusions-and-caveats)
 - [Next steps](#next-steps)
+- [From experiment to a service assurance application](#from-experiment-to-a-service-assurance-application)
 
 ## O-RAN interfaces involved in this experiment
 
@@ -427,3 +428,102 @@ The most useful next step is a multi-seed comparison, because the current GRU ad
 5. **Add challengers:** logistic regression as a cheap baseline, a GRU with a 15 s window, and a hybrid GRU that also receives the 105 engineered features.
 6. **Tune XGBoost** (for example `scale_pos_weight`) and compare its feature importances at the 5 s and 30 s horizons.
 7. **Test on real data.** Colosseum, OpenRAN Gym and ColO-RAN datasets, or KPM exports from a CSP design partner, are the decisive test of whether deep learning is worth its cost.
+
+## From experiment to a service assurance application
+
+This section sketches how the experiment could become a **predictive service assurance** capability for mobile network monitoring: instead of reporting radio link failures after they happen, the application warns the NOC (or an automated closed loop) 15 to 30 seconds ahead, per UE and per cell. It is a design proposal. Nothing here has been built or validated on real network data.
+
+### What the application would do
+
+| Capability | What the user gets | What it builds on |
+| --- | --- | --- |
+| **Early warning** | Alerts such as "UE group in cell X is likely to drop within 30 s", with a risk score and the signals that drove it | The supervised models (XGBoost, GRU) and their feature importances |
+| **Cell and cluster health view** | Rate of at-risk UEs per cell, trend over time, worst cells first | Aggregating per-UE scores by cell and time |
+| **Root-cause hints** | Which KPIs moved before the alert (RSRP slope, BLER, HARQ retransmissions, timing advance, A3 margin) | Feature importances and per-alert feature values |
+| **Closed-loop actions (optional)** | Automatic mitigation, for example a handover trigger or a mobility-parameter change | E2-RC control from an xApp, or A1 policies from an rApp |
+| **Model operations** | Versioned models, per-horizon models, drift and quality monitoring, controlled rollout | MLflow tracking and registry |
+
+### Reference architecture
+
+```text
+ RAN (O-DU, O-CU)                                                   NOC / OSS
+      │  E2 (KPM, RC)        ┌──────────────────────────────┐       ▲   ▲
+      ├─────────────────────▶│ 1. Ingestion (Kafka)         │       │   │ alerts, dashboards
+      │  O1 (PM, FM, traces) │ 2. Stream feature builder    │       │   │ tickets
+      └─────────────────────▶│ 3. Model serving (XGBoost/   │───────┘   │
+                             │    GRU) + threshold + dedupe │───────────┘
+                             │ 4. Alert and KPI store       │───▶ closed loop (optional)
+                             └──────────────┬───────────────┘      E2-RC / A1 policy
+                                            │ labels, outcomes
+                             ┌──────────────▼───────────────┐
+                             │ 5. Training pipeline          │
+                             │    (this repository) + MLflow │
+                             └──────────────────────────────┘
+```
+
+| Component | Description | Link to this repository |
+| --- | --- | --- |
+| 1. Ingestion | E2-KPM streams and O1 files into a message bus and a time-series store | Replaces `RLF_synthetic_data.py`; produces the same per-UE, per-second table |
+| 2. Stream feature builder | Computes the rolling features per UE as data arrives, with the same code and `FEATURE_VERSION` as training | `RLF_features.py`, adapted from batch to streaming. Training and serving must share the feature definitions to avoid skew |
+| 3. Model serving | Loads the registered model, scores each UE-second, applies a fixed threshold, merges alerts within one horizon into one episode | `RLF_train.py` models, the model logged to MLflow, the episode logic already used in the `alert_episodes_per_ue_hour` metric |
+| 4. Alert and KPI store | Keeps scores, alerts and later outcomes (did an RLF follow?) | New. Needed for monitoring and for retraining labels |
+| 5. Training pipeline | Scheduled retraining and evaluation with the same time-ordered folds, then promotion in the MLflow registry | `RLF_train.py`, with real data in place of the synthetic generator |
+
+### Deployment options
+
+| Option | Where it runs | Latency | Best for | Trade-off |
+| --- | --- | --- | --- | --- |
+| **xApp** | Near-RT RIC | 10 ms to 1 s loop | Real-time scoring and closed-loop actions over E2 | Needs a near-RT RIC and E2 nodes that expose per-UE KPIs |
+| **rApp / SMO analytics service** | Non-RT RIC or SMO | Seconds or more | Cell-level and cluster-level scoring, dashboards, advisory alerts | Coarser data, no sub-second control |
+| **External service on O1 and trace data** | Operator cloud or OSS | Seconds to minutes | Fastest to deploy on a commercial network, advisory use | Depends on the vendor's export format and rate |
+
+A pragmatic path is to start as an **advisory service on O1 and trace data**, then move the model into an **xApp** once per-UE E2 reporting is available and the alerts are trusted.
+
+### Making the models operational
+
+- **Fixed threshold.** The experiment sets the alert threshold from the test fold's own normal rows (an oracle). A product must fix the threshold in advance from a validation period and then monitor the false-alarm rate it actually produces.
+- **Alert budget.** The experiment reports about 7 alert episodes per UE-hour on synthetic data, which would be unusable in a NOC. In production, alert at cell or UE-group level, require persistence, and tune against an agreed budget of alerts per cell per day.
+- **Horizon by use case.** A 30 s horizon gives roughly 15 to 18 s of lead time in the tests; a 5 s horizon gives 4 to 6 s. Choose per action: a handover or parameter change needs more warning than a notification.
+- **Model choice.** XGBoost is the sensible default (fast, with feature importances). The GRU gained about 0.03 PR-AUC on synthetic data at higher compute cost and is a candidate only if the gain holds on real data.
+- **Cost.** Model scoring is cheap in the tests (about 2 to 3 µs per row for XGBoost, 17 to 44 µs for the GRU). The cost of computing features per UE in a stream was not measured and will likely dominate.
+- **Explanations.** Show the top contributing KPIs with each alert so engineers can judge it.
+
+### MLOps lifecycle with MLflow
+
+1. **Track** every training run (already done) with the dataset tag, feature version, horizon, parameters and metrics.
+2. **Register** the final model per family and horizon, with stages such as candidate, shadow and production.
+3. **Shadow mode.** Run the candidate beside production, score the same traffic, and compare alerts against outcomes before it is allowed to alert or act.
+4. **Monitor** the false-alarm rate, event recall, lead time and input drift (the distribution of each KPI) per vendor, cell type and band.
+5. **Retrain** on a schedule or when drift or quality thresholds are crossed, using the cell hold-out score as a check that the model generalizes to new cells.
+6. **Roll back** to the previous registered version if quality drops.
+
+### Integration with service assurance processes
+
+- **Fault and performance management:** publish alerts to the OSS or fault manager in standard alarm form, with severity, location (cell, cluster), time and probable cause hints.
+- **Ticketing and dashboards:** link alerts to trouble tickets and show cell health on the NOC dashboard.
+- **SON and closed loop:** feed risk scores into mobility optimization or automated actions, with guardrails (rate limits, rollback, human approval at first).
+- **SLA and customer experience:** aggregate at-risk and failed sessions by slice, service or customer segment for reporting.
+- **Data governance:** UE-level traces are personal data in most jurisdictions, so pseudonymize identifiers, minimize retention and keep processing inside the operator's environment.
+
+### Productization roadmap
+
+| Phase | Goal | Exit criteria |
+| --- | --- | --- |
+| **0. Prove it on real data** | Run `RLF_train.py` on a test bed or a design partner's KPM export; repeat with several seeds | Lift over chance and cell hold-out score are acceptable on real data; the label definition is agreed |
+| **1. Offline pilot** | Score recorded data for a pilot cluster and compare predictions with actual RLFs | Alert budget and lead time meet the operator's targets at a fixed threshold |
+| **2. Shadow in production** | Stream real data, score live, alert nobody; log outcomes | False-alarm rate and recall stay stable for several weeks |
+| **3. Advisory alerts** | Alerts and dashboards for the NOC; ticket integration | Engineers act on alerts; precision at episode level is accepted |
+| **4. Closed loop** | xApp or rApp triggering mitigation with guardrails | Measured reduction in RLFs or drops versus a control group |
+| **5. Scale and generalize** | Multi-vendor adapters, more failure types (handover failure, throughput degradation), per-cell-type models | Retraining works across vendors without manual rework |
+
+### Risks and open questions
+
+- **Real-data performance is unknown.** All results are synthetic, and the generator has about 5.4 RLFs per UE-hour, far above a real network. Real positives will be much scarcer and the PR-AUC lower.
+- **Data availability.** Per-UE, per-second KPIs are not exposed by every vendor or E2 node. Without them the product falls back to coarser data and weaker prediction.
+- **Sudden failures.** About 11% of synthetic RLFs have no warning; real networks will have failures no KPI predicts, so the product should be positioned as early warning, not full prevention.
+- **Label quality.** The network sees an RLF late and in several forms; an inconsistent definition would corrupt training and evaluation.
+- **Alert fatigue.** A model with good PR-AUC can still be unusable if its alert volume is not tuned to the operator's workflow.
+- **Vendor and cell drift.** Models may need retraining per vendor, band or cell type.
+- **Measured value.** Prove business value (fewer drops, less churn, lower mean time to detect) rather than model metrics alone.
+
+*This section is a design proposal based on the experiment's synthetic results and on general O-RAN and service assurance practice. It has not been validated against a specific operator environment or vendor.*
