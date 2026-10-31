@@ -94,7 +94,7 @@ The pipeline has three parts:
 | --- | --- | --- |
 | 1 | `RLF_synthetic_data.py` | Creates plausible per-UE KPI data with known failures |
 | 2 | `RLF_features.py` | Turns that data into labelled model inputs |
-| 3 | `RLF_train.py` | Trains and compares four model families under identical conditions, logging every run to MLflow |
+| 3 | `RLF_train.py` | Trains and compares five models (four families; gradient boosting runs as both XGBoost and HistGradientBoosting) under identical conditions, logging every run to MLflow |
 
 ## Repository layout
 
@@ -103,7 +103,7 @@ The pipeline has three parts:
 ├── RLF_synthetic_data.py   # synthetic per-UE, per-second KPI generator
 ├── RLF_features.py         # 105 features + RLF label
 ├── RLF_train.py            # training, evaluation and MLflow logging
-├── RLF_requirements.txt    # mlflow, numpy, pandas, scikit-learn, xgboost (+ optional torch)
+├── RLF_requirements.txt    # mlflow, numpy, pandas, scikit-learn, xgboost (torch is also required: add it to this file or install it separately)
 └── docs/
     └── oran-architecture.png
 ```
@@ -228,22 +228,23 @@ In real data the `rlf` column, and therefore every label, comes from evidence on
 
 - Parameters, tags (dataset, feature version, horizon) and the averaged metrics.
 - `features.json`, plus feature importances for XGBoost and the learned statistics for the z-score and the GRU.
-- The trained model, named per family and horizon (for example `rlf_xgboost_h30s`).
+- The trained model, named per family and horizon (for example `rlf_xgboost_h30s` or `rlf_hist_gradient_boosting_h30s`).
 
-**Command-line options:** `--horizon`, `--n-ues`, `--seconds`, `--seed` (data), `--n-splits`, `--csv` (real data with the same columns), `--tracking-uri`, `--experiment`, `--no-gru`, `--gru-window`, `--gru-epochs`.
+**Command-line options:** `--horizon`, `--n-ues`, `--seconds`, `--seed` (data), `--n-splits`, `--csv` (real data with the same columns), `--tracking-uri`, `--experiment`, `--gru-window` (default 60) and `--gru-epochs` (default 12). There is no option to skip the GRU, so PyTorch and XGBoost must both be installed.
 
-**Constants in the code:** `SEED = 42` (model randomness) and `TARGET_FPR = 0.01` (false-alarm rate used to set the alert threshold).
+**Constants in the code:** `SEED = 50` (model randomness) and `TARGET_FPR = 0.02` (false-alarm rate used to set the alert threshold).
 
 ## Quick start
 
 ```bash
-pip install -r RLF_requirements.txt          # add torch>=2.2 for the GRU
+pip install -r RLF_requirements.txt
+pip install "torch>=2.2"                      # required: RLF_train.py imports it unconditionally
 
-# 5 s horizon, no GRU
+# 5 s horizon
 python RLF_train.py --horizon 5
 
-# 30 s horizon, GRU with a 60 s window
-python RLF_train.py --horizon 30 --gru-window 60
+# 30 s horizon, GRU with a 30 s window (the default is 60 s)
+python RLF_train.py --horizon 30 --gru-window 30
 
 # --seed sets the data seed; the model seed is the SEED constant in RLF_train.py
 python RLF_train.py --horizon 30 --seed 8
@@ -262,7 +263,7 @@ Every family is trained and scored on the same time-ordered splits, so differenc
 - **1 final model** trained on all the data and logged to MLflow. It has no test score.
 - Inside training, the GRU holds out the last 15% of its training period to choose the best epoch, and scikit-learn's HistGradientBoosting uses its own internal early-stopping validation when the data is large.
 
-**Alert threshold:** each model outputs a risk score per UE-second. In every test fold the threshold is set at the 99th percentile of the scores of normal rows (`TARGET_FPR = 0.01`), so 1% of normal seconds raise an alert. This gives every model the same false-alarm budget. Because it is computed from the test labels, a live system would need a threshold fixed in advance.
+**Alert threshold:** each model outputs a risk score per UE-second. In every test fold the threshold is set at the 98th percentile of the scores of normal rows (`1 − TARGET_FPR`, with `TARGET_FPR = 0.02`), so 2% of normal seconds raise an alert. This gives every model the same false-alarm budget. Because it is computed from the test labels, a live system would need a threshold fixed in advance.
 
 **Metrics**
 
@@ -276,17 +277,17 @@ Every family is trained and scored on the same time-ordered splits, so differenc
 | `infer_us_per_sample` | Scoring time per row, in microseconds | Lower |
 | `cell_holdout_pr_auc` | `pr_auc` on unseen cells | Higher |
 
-If `TARGET_FPR` is changed, the column name `recall_at_1pct_fpr` stays the same but the value refers to the new rate.
+The column name `recall_at_1pct_fpr` is fixed in the code. With the current `TARGET_FPR = 0.02` it actually holds recall at a **2%** false-alarm rate, and the same applies to any other value.
 
 ## Model families
 
-The four families run from the simplest rule to a deep-learning model, so each step has to earn its extra complexity.
+The four families (five models, because gradient boosting runs as both XGBoost and HistGradientBoosting) run from the simplest rule to a deep-learning model, so each step has to earn its extra complexity.
 
 | Family | Learning type | Input | How it scores a row |
 | --- | --- | --- | --- |
 | Robust z-score | Unsupervised, labels ignored | 6 engineered features | Largest absolute robust z-score among the 6 features |
 | Isolation Forest | Unsupervised, but trained on normal rows only | All 105 features | Negative of scikit-learn's `score_samples`: a short average path through random trees means more anomalous |
-| Gradient boosting (XGBoost, or HistGradientBoosting if XGBoost is missing) | Supervised classifier | All 105 features | Predicted probability of an RLF within the horizon |
+| Gradient boosting: XGBoost and HistGradientBoosting (two separate runs) | Supervised classifier | All 105 features | Predicted probability of an RLF within the horizon |
 | GRU (PyTorch) | Supervised sequence model | Last 30 or 60 s of 13 raw KPI channels | Sigmoid of the network's output after reading the window |
 
 **Why these four:** the z-score shows how far a simple statistical rule goes; Isolation Forest is an anomaly detector that needs no failure labels; boosting is the standard strong learner for tabular data; and the GRU tests whether a sequence model reading raw KPIs adds anything.
@@ -304,13 +305,13 @@ The 6 features are `rsrp_slope_5s`, `sinr_slope_5s`, `nb_gap`, `dl_bler_mean_5s`
 ### Gradient boosting
 
 - **XGBoost hyperparameters:** `n_estimators=300`, `max_depth=6`, `learning_rate=0.05`, `subsample=0.8`, `colsample_bytree=0.8`, `scale_pos_weight=sqrt(neg/pos)`, `random_state=SEED`.
-- **HistGradientBoosting fallback:** `max_iter=300`, `max_depth=6`, `learning_rate=0.05`, `class_weight="balanced"`; its internal early stopping may keep fewer than 300 trees.
+- **HistGradientBoosting:** a separate model run next to XGBoost (not a fallback in the current code); `max_iter=300`, `max_depth=6`, `learning_rate=0.05`, `class_weight="balanced"`; its internal early stopping may keep fewer than 300 trees.
 - **Learned:** the trees (split features, thresholds, leaf values). Each new tree corrects the errors of the previous ones, and their summed outputs go through a sigmoid.
-- **XGBoost versus the fallback:** the same algorithm family with near-identical accuracy in these tests. XGBoost scores about 3× faster at the 5 s horizon and 7 to 8× faster at 30 s, and gives feature importances.
+- **XGBoost versus HistGradientBoosting:** the same algorithm family with near-identical accuracy in these tests. XGBoost scores about 3× faster at the 5 s horizon and 7 to 8× faster at 30 s, and gives feature importances.
 
 ### GRU
 
-- **Hyperparameters:** window 30 s by default (`--gru-window`), 1 layer with 32 hidden units, 12 epochs, batch 512, AdamW with learning rate 0.002 and weight decay 1e-4, gradient clipping at 1.0, positive-class weight `sqrt(neg/pos)`.
+- **Hyperparameters:** window 60 s by default (`--gru-window`; the class default of 30 s is overridden by the command line), 1 layer with 32 hidden units, 12 epochs, batch 512, AdamW with learning rate 0.002 and weight decay 1e-4, gradient clipping at 1.0, positive-class weight `sqrt(neg/pos)`.
 - **Learned parameters:** 4,545 weights (GRU input weights 1,248; recurrent weights 3,072; biases 192; output layer 33).
 - **Idea:** the GRU (Gated Recurrent Unit) reads the window second by second and keeps a memory vector, using an update gate and a reset gate to decide what to keep. The final memory goes through a linear layer and a sigmoid.
 - **Input:** 13 raw channels (the 10 KPIs `rsrp`, `rsrq`, `sinr`, `ul_sinr`, `cqi`, `dl_bler`, `harq_retx`, `ta`, `phr` and `a3_events`, plus `nb_gap`, `a3_margin` and `ho_cmd`). It does not see the 80 rolling features, because it is meant to learn its own temporal summaries from the raw KPIs.
@@ -322,7 +323,7 @@ The GRU is trained on blocks of shape `(batch, window, channels)`, for example (
 
 | Term | Value | Meaning |
 | --- | --- | --- |
-| Window | 30 s by default, 60 s in some runs (`--gru-window`, logged as `window_s`) | The stretch of recent history read for one prediction: for second *t*, the rows from *t−N+1* to *t* of the same UE, where *N* is the window value |
+| Window | 60 s by default, 30 s in some runs (`--gru-window`, logged as `window_s`) | The stretch of recent history read for one prediction: for second *t*, the rows from *t−N+1* to *t* of the same UE, where *N* is the window value |
 | Channels | 13 | One input signal measured every second (the raw KPIs listed above). PyTorch calls this `input_size`. "Channel" separates these raw signals from the 105 engineered features of the other models; it has nothing to do with radio channels. A channel holds the raw value at every time step. |
 | Batch | 512 | A set of 512 independent windows, randomly drawn from the training rows, each made of consecutive seconds of one UE, so a batch mixes many UEs and different moments in time. The weights are updated once per batch. |
 | Epoch | 12 at most | One pass over **all** the training windows, which means many batches. A pass over a single batch is an **iteration** (or step): one weight update. In the first time fold there are about 92,000 training windows, so one epoch is about 180 iterations (92,000 / 512). After each epoch the model is scored on the validation slice, and the weights of the best epoch (by PR-AUC) are kept, so the final model may come from an earlier epoch. |
@@ -361,6 +362,8 @@ Three different "windows" appear in this project:
 The tabular models therefore do **not** predict from a single raw sample: their rows already encode the past. The test compares summaries designed by hand with summaries learned from raw sequences, so a GRU gain, if real, cannot be credited to "looking at history" alone. Other differences also matter: the tabular models receive 105 inputs including four noise columns, the GRU receives 13 raw channels (including `ho_cmd`), and a 60 s window reaches further back than the 30 s rolling features.
 
 ## Results of the comparison tests
+
+> **Which settings produced these tables?** The tables below were produced with earlier settings (model seed 42, or 40 where stated; `TARGET_FPR` was 0.01 in the version first used, and at least one run logged `target_fpr = 0.02`). The current `RLF_train.py` uses `SEED = 50` and `TARGET_FPR = 0.02`, so re-run it before comparing new numbers with these; recall at the false-alarm rate in particular is not comparable between 1% and 2%.
 
 A supervised GRU scores highest on PR-AUC at the 30 s horizon, but only by about 0.03, and several other differences shrink or reverse when the seed changes.
 
@@ -426,7 +429,7 @@ On this synthetic data, supervised learning clearly beats the unsupervised metho
 - **Limited variation.** All runs share one dataset (data seed 7, 325 events). The seed-40 run changed only model randomness. Differences below about 0.01 in PR-AUC, 0.03 in recall or cell hold-out, and 2 s in lead time should be treated as noise.
 - **Oracle threshold.** The alert threshold comes from the test fold's own normal rows. A deployed system would use a fixed threshold and perform somewhat worse.
 - **Unequal inputs.** The tabular models see 105 engineered features; the GRU sees 13 raw channels, and a 60 s window gives it a longer history than any rolling feature except `secs_since_a3`.
-- **`TARGET_FPR` consistency.** The metric name `recall_at_1pct_fpr` is fixed, but one run logged `target_fpr = 0.02`; check that all compared runs used the same value.
+- **`TARGET_FPR` consistency.** The metric name `recall_at_1pct_fpr` is fixed, but the current code uses `TARGET_FPR = 0.02` and at least one earlier run also logged 0.02; check that all compared runs used the same value.
 - **GRU logging.** Recent MLflow versions default to a PyTorch format that needs an input example, so the code requests pickle and falls back to saving the weights. The pickle route worked on the author's machine; the fallback path has not been tested.
 
 ## Next steps
