@@ -22,6 +22,7 @@
 - [Conclusions and caveats](#conclusions-and-caveats)
 - [Next steps](#next-steps)
 - [From experiment to a service assurance application](#from-experiment-to-a-service-assurance-application)
+- [Evolving into an automated closed loop with the SMO](#evolving-into-an-automated-closed-loop-with-the-smo)
 
 ## O-RAN interfaces involved in this experiment
 
@@ -527,3 +528,110 @@ A pragmatic path is to start as an **advisory service on O1 and trace data**, th
 - **Measured value.** Prove business value (fewer drops, less churn, lower mean time to detect) rather than model metrics alone.
 
 *This section is a design proposal based on the experiment's synthetic results and on general O-RAN and service assurance practice. It has not been validated against a specific operator environment or vendor.*
+
+## Evolving into an automated closed loop with the SMO
+
+The previous section ends with an advisory service and an optional closed loop. This section describes how to evolve it into a **closed-loop automation** capability inside a fully automated network, with the SMO (Service Management and Orchestration) as the orchestrator. It is a design proposal; nothing here has been built or validated on real network data.
+
+### From advisory to autonomous
+
+Closed-loop automation is usually adopted in steps, giving the system more authority as trust in its predictions grows.
+
+| Level | Behavior | Human role | Typical entry criteria |
+| --- | --- | --- | --- |
+| **0. Observe** | Predict and log only (shadow mode) | None | Stable false-alarm rate and recall over several weeks |
+| **1. Advise** | Raise alerts with a recommended action | Decides and acts | Engineers accept the alerts and explanations |
+| **2. Approve** | Propose an action and execute it after one-click approval | Approves each action | The recommended action is correct in most reviewed cases |
+| **3. Act within guardrails** | Execute low-risk actions automatically, report after the fact | Supervises, can override | Measured benefit against a control group; rollback proven |
+| **4. Autonomous** | Handle the full cycle (detect, decide, act, verify, roll back) for defined scenarios | Sets intent and policy | Long, stable track record per scenario and per vendor |
+
+Each level is set **per action type and per scope** (a cell cluster, a vendor), so a safe action can be autonomous while a risky one stays at level 2.
+
+### The closed loop
+
+```text
+        ┌────────────────────────────────────────────────────────────┐
+        ▼                                                            │
+  1. Observe ──▶ 2. Predict ──▶ 3. Decide ──▶ 4. Act ──▶ 5. Verify ──┘
+  O1 / E2 KPIs   RLF risk per   policy and    E2-RC /     did the risk drop,
+  and events     UE and cell    guardrails    A1 / O1     did anything get
+                                (rApp / xApp) change      worse? else roll back
+```
+
+| Step | What happens | Where it runs |
+| --- | --- | --- |
+| **Observe** | KPIs and events arrive over E2 (fast) and O1 (slow) | Data platform in or next to the SMO |
+| **Predict** | The registered RLF model scores each UE-second and merges alerts into episodes | xApp (near-RT RIC) or rApp / SMO service |
+| **Decide** | A policy engine maps a prediction to an action and checks it against guardrails | rApp in the Non-RT RIC, with intent and policy held in the SMO |
+| **Act** | The action is sent to the RAN | E2-RC from an xApp (milliseconds to seconds), A1 policy from an rApp, or O1 configuration change through the SMO (minutes) |
+| **Verify** | Compare outcomes with the prediction and with a control group; keep or roll back | Same data platform; results stored with the alert |
+
+### Two nested loops
+
+Closed loops work at different speeds, and each action belongs to the loop that matches its time scale.
+
+| Loop | Time scale | Where | Example actions |
+| --- | --- | --- | --- |
+| **Near-real-time** | 10 ms to 1 s control, with 15 to 30 s of prediction lead time | xApp on the near-RT RIC, using E2-RC | Trigger or advance a handover for at-risk UEs, change a UE's scheduling or traffic steering |
+| **Non-real-time** | Seconds to hours | rApp in the Non-RT RIC and the SMO, using A1 and O1 | Adjust handover thresholds (A3 offset, hysteresis, time-to-trigger) for a cell, retune coverage or load balancing, open a ticket, trigger a field check |
+
+The faster loop handles the individual at-risk UE; the slower loop uses accumulated alerts to fix the cause (for example a cell with a persistent coverage hole or a bad neighbor relation).
+
+### SMO integration
+
+| SMO function | Role in the closed loop |
+| --- | --- |
+| **O1 (to every managed element)** | Source of PM, FM, trace and configuration data; channel for configuration changes in the slower loop |
+| **A1 (Non-RT RIC → near-RT RIC)** | Delivers policies (for example "limit handover changes to N per hour per cell"), registers and deploys ML models to xApps, supplies enrichment information |
+| **E2 (near-RT RIC ↔ O-CU / O-DU)** | Fast data and RC control used by the xApp |
+| **O2 (SMO ↔ O-Cloud)** | Deploys and scales the serving components themselves (xApps, rApps, feature builder) and the ML platform |
+| **rApps in the Non-RT RIC** | Policy decision logic, model management, slow-loop optimization |
+| **Inventory and topology** | Cell and neighbor relations, vendor and software versions, used to scope actions and choose features |
+| **Intent / policy interface** | Operators state goals ("keep RLF rate below X per cell") instead of procedures; the loop translates them into policies and actions |
+
+**Model lifecycle in the SMO.** Training and tracking stay in the MLflow-based pipeline of this repository. A model that passes shadow testing is registered, packaged (for example as a container or xApp bundle) and **deployed through the SMO** to the near-RT RIC or to an rApp, with the model version recorded in the SMO's inventory so every action can be traced to a model.
+
+### Guardrails and safety
+
+An automated loop can make a network worse faster than a human could, so safety is part of the design, not an add-on.
+
+- **Scope limits:** which cells, vendors and parameters the loop may touch; protected cells (emergency services, critical customers) excluded.
+- **Rate limits:** maximum number of actions per cell, per hour and per day, and a minimum interval between changes to the same parameter.
+- **Bounds on changes:** each parameter may move only within a safe range and by a small step.
+- **Conflict handling:** avoid conflicts with other automation (SON functions, other xApps and rApps) through a shared view of who may change which parameter, and coordination in the SMO.
+- **Verification and automatic rollback:** every action has a success test (RLF rate, drop rate, throughput) over a defined window; if it fails or any protected KPI degrades, revert.
+- **Kill switch and degradation:** a global and per-scope off switch; if the model, the data feed or the SMO link fails, fall back to the previous behavior and raise a fault.
+- **Human in the loop where needed:** approvals for new action types, and a review of a sample of automatic actions.
+- **Audit trail:** record the prediction, model version, policy, action, approver (or "auto"), outcome and rollback, to support troubleshooting and compliance.
+- **Controlled experiments:** keep a control group of cells or UEs without the action, to measure real benefit and not only that alerts decreased.
+
+### What changes in the models and the data
+
+- **From prediction to decision.** The experiment predicts whether an RLF will occur. A closed loop also needs to know which action helps. Start with rules over the alert and its driving KPIs (for example a rising neighbor gap points to a handover), then learn the effect of actions from logged outcomes, for example with uplift modeling or contextual bandits, introduced cautiously and with guardrails.
+- **Action and outcome labels.** Log each action, its context and the result. Without this the system cannot learn or be audited.
+- **Feedback effects.** Once the loop acts, the data changes (successful actions remove the failures the model was trained to predict). Retraining must account for this, for example by keeping control groups or by logging whether an action was applied.
+- **Confidence and uncertainty.** Act automatically only above a calibrated confidence, and route lower-confidence alerts to a human.
+- **Latency and freshness.** The near-real-time loop needs the feature builder and model to run within the 15 to 30 s lead time with margin; stale or missing data must suppress automatic action.
+- **Fixed threshold and alert budget.** Needed even more than for advisory use, because each false alarm now causes a real change in the network.
+
+### Evolution roadmap
+
+| Phase | Goal | Exit criteria |
+| --- | --- | --- |
+| **A. Close the data loop** | Log predictions, alerts and outcomes; build the verification measurements | Outcome data is complete and trusted |
+| **B. Policy and recommendation engine** | Map alerts to recommended actions with rules; show them to engineers | Recommendations are accepted at an agreed rate |
+| **C. Approved actions** | Execute actions through E2-RC, A1 or O1 after approval, with logging and rollback | Rollback tested; actions verified automatically |
+| **D. Guarded automation** | Automatic low-risk actions in a pilot cluster with a control group | Measured reduction in RLFs or drops with no protected-KPI regression |
+| **E. SMO integration** | Models and rApps/xApps deployed and versioned through the SMO; intent and policy interface; shared conflict handling | End-to-end lifecycle runs without manual steps |
+| **F. Scale across scenarios and vendors** | Add failure types and actions; multi-vendor adapters; per-scope autonomy levels | Stable operation across vendors with per-scenario autonomy |
+
+### Risks and open questions
+
+- **Authority versus trust.** Real-data accuracy is not established; moving past level 1 before it is would risk harming the network.
+- **Interactions with other automation.** SON functions and other xApps and rApps may change the same parameters; conflict mitigation is a standards and vendor topic, not only a local one.
+- **Vendor support for control.** E2-RC and A1 support varies by vendor and release; many networks allow only O1 changes, which limits the loop to the slower time scale.
+- **Causal uncertainty.** A prediction does not tell whether an action helps; claiming benefit requires experiments with control groups.
+- **Accountability.** Define who is responsible for automated changes, how they are reviewed and how the operator audits them.
+- **Standards and interfaces.** The O-RAN specifications (for example around the RICs, A1, E2 service models and the SMO) evolve across releases; check the target release and vendor.
+
+*This section is a design proposal based on the experiment's synthetic results and on general O-RAN, SMO and closed-loop automation practice. It has not been validated against a specific operator environment or vendor.*
