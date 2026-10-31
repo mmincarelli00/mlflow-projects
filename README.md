@@ -60,27 +60,7 @@ The experiment predicts radio link failures (RLF) from per-UE KPIs. In a real O-
 
 ### Where the experiment data can come from
 
-The table below maps the synthetic columns to the nodes and interfaces that could supply them. It extends the [mapping used for the synthetic dataset](#collecting-the-same-dataset-from-a-real-system).
-
-| Data needed | Measured at | Reaches your pipeline through | Notes |
-| --- | --- | --- | --- |
-| `rsrp`, `rsrq`, `sinr`, `neighbor_rsrp`, `a3_events`, `cqi` | UE | Uu (RRC measurement and CSI reports) → O-DU / O-CU-CP → **E2 (KPM)** or **O1 traces** | Reporting period is configured by the network, so check it gives about 1 s resolution |
-| `ul_sinr`, `dl_bler`, `harq_retx`, `ta`, `phr` | O-DU (MAC/PHY) | **E2 (KPM)**, or vendor traces over **O1** | Per-UE, per-second availability depends on the vendor and on the E2 service models the node supports |
-| `ho_cmd`, handover events | O-CU-CP | **E2 (RC)** event triggers, or **O1** traces | Useful to label handovers and to separate handover failures (timer T304) from RLFs |
-| `prb_util`, `connected_ues` | Cell level, O-DU / O-CU | **O1** PM counters (3GPP TS 28.552), or E2-KPM cell measurements | Coarse (often 15 minutes) over O1 |
-| `a3_offset`, `hysteresis`, `ttt_ms` | O-CU-CP configuration | **O1** configuration management | Changes rarely, so low-rate collection is enough |
-| RLF label (`rlf`) | UE declares it, network sees the consequence | **O1** traces and counters; RRC re-establishment requests and "radio connection with UE lost" releases at the O-CU; **E2-RC** events; the UE RLF report | See [Recognizing an RLF in real data](#recognizing-an-rlf-in-real-data); the network sees it late |
-
-**Typical collection paths**
-
-1. **xApp on the near-RT RIC (best fit).** An xApp subscribes over E2 to KPM reports from the O-DU and O-CU and to RRC events, and streams them to a store such as Kafka or InfluxDB. This gives the per-UE, per-second table the models expect, and the same xApp can later run the trained model.
-2. **SMO and O1 (batch).** Pull counters, alarms, configuration and trace files through the SMO. Slower and coarser, but it needs no near-RT RIC and is available on most commercial networks. Good for labels, configuration and cell-level context.
-3. **Hybrid (recommended starting point).** E2 for fast per-UE KPIs, O1 for labels, configuration and cell counters, joined by UE, cell and time into one CSV for `RLF_train.py`.
-4. **Test bed.** srsRAN or OpenAirInterface with an E2 agent, or Colosseum, OpenRAN Gym and ColO-RAN, expose the same interfaces without a live network.
-
-**Closing the loop:** a model trained and tracked in the SMO (MLflow) can be deployed to the near-RT RIC as an xApp, or to the non-RT RIC as an rApp, with policies and models delivered over **A1** and mitigation actions (for example a handover or parameter change) sent back to the RAN over **E2-RC**.
-
-*This section describes the general O-RAN Alliance architecture and 3GPP behavior. Which interfaces, service models and per-UE metrics are exposed varies by vendor and release, and it has not been checked against a specific product.*
+In short, per-UE KPIs come mainly from the **O-DU and O-CU over E2**, and labels, configuration and cell counters from **O1**. The column-by-column mapping, the collection paths and how to build the CSV are in [Collecting the same dataset from a real system](#collecting-the-same-dataset-from-a-real-system).
 
 ## Purpose and context
 
@@ -134,30 +114,32 @@ Each file does one job in a chain: generate data, build features and labels, the
 
 #### Collecting the same dataset from a real system
 
-A real network can supply the same per-UE, per-second table, but mainly through E2 reporting or vendor traces, because the standard 15-minute performance counters are far too coarse.
+A real network can supply the same per-UE, per-second table, but mainly through E2 reporting or vendor traces, because the standard 15-minute performance counters are far too coarse. The [interfaces table above](#interfaces) shows where each node and interface sits.
 
 **Where the data can come from**
 
-- **O-RAN near-RT RIC (E2 interface).** An xApp subscribes to E2SM-KPM measurements (per cell and, depending on what the E2 node supports, per UE) and can receive RRC events through E2SM-RC. Records stream into a store such as Kafka or InfluxDB. This is the path closest to the target product.
+- **O-RAN near-RT RIC (E2 interface).** An xApp subscribes to E2SM-KPM measurements from the O-DU and O-CU (per cell and, depending on what the E2 node supports, per UE) and can receive RRC events through E2SM-RC. Records stream into a store such as Kafka or InfluxDB. This is the path closest to the target product, and the same xApp can later run the trained model.
 - **Vendor RAN traces.** Call-trace and cell-trace exports from the vendor's OSS carry per-UE measurement reports, handover and failure events. 3GPP Minimization of Drive Tests (MDT) adds UE-reported RSRP, RSRQ and power headroom.
-- **SMO and the O1 interface.** O1 delivers cell-level counters and configuration data. Counters usually arrive in 15-minute files, so use them for `prb_util`, `connected_ues` and handover parameters, not for second-level KPIs.
-- **Test beds and open datasets.** srsRAN or OpenAirInterface with an E2 agent, Colosseum and OpenRAN Gym, POWDER, Arena, COSMOS and ColO-RAN produce the same kind of records without touching a live network.
+- **SMO and the O1 interface.** O1 delivers performance counters, alarms, configuration data and trace files from every managed element (near-RT RIC, O-CU, O-DU, O-RU). Counters usually arrive in 15-minute files, so use them for `prb_util`, `connected_ues`, handover parameters and labels, not for second-level KPIs. It needs no near-RT RIC and is available on most commercial networks.
+- **Test beds and open datasets.** srsRAN or OpenAirInterface with an E2 agent, Colosseum and OpenRAN Gym, POWDER, Arena, COSMOS and ColO-RAN expose the same interfaces and produce the same kind of records without touching a live network.
 - **An operator design partner.** The route to real RLF volume and realistic variety.
+
+A practical starting point is a **hybrid**: E2 for the fast per-UE KPIs, O1 for labels, configuration and cell counters, joined by UE, cell and time into one CSV for `RLF_train.py`.
 
 **Where each column comes from**
 
-| Column | Typical real source |
-| --- | --- |
-| `ue_id`, `cell_id`, `t` | Pseudonymized RAN UE identifier, serving cell identity (NR cell ID or PCI), and a timestamp resampled to 1 s |
-| `rsrp`, `rsrq`, `sinr`, `neighbor_rsrp`, `a3_events` | UE RRC measurement reports (serving and neighbor results, A3 event triggers) and CSI reports |
-| `cqi` | UE CSI report |
-| `ta`, `phr` | gNB-DU MAC/PHY: timing advance and the UE's power-headroom reports |
-| `ul_sinr`, `dl_bler`, `harq_retx` | gNB-DU PHY/MAC statistics: uplink SINR, HARQ ACK/NACK results and retransmission counts |
-| `ho_cmd` | Handover commands (RRC reconfiguration with synchronization) seen at the CU or in traces |
-| `prb_util`, `connected_ues` | Cell-level counters (PRB usage and RRC-connected users, as defined in 3GPP TS 28.552) |
-| `a3_offset`, `hysteresis`, `ttt_ms` | Handover (A3) measurement configuration, from configuration data or the RRC configuration |
-| `hour_of_day` | Derived from the timestamp |
-| `rlf` (the label) | Radio link failure events, defined [below](#recognizing-an-rlf-in-real-data) |
+| Column | Measured at | Reaches the pipeline through | Notes |
+| --- | --- | --- | --- |
+| `ue_id`, `cell_id`, `t` | O-CU-CP / O-DU | Pseudonymized RAN UE identifier, serving cell identity (NR cell ID or PCI), and a timestamp resampled to 1 s | The UE identifier often changes with the cell, so keep rows linked across handovers |
+| `rsrp`, `rsrq`, `sinr`, `neighbor_rsrp`, `a3_events` | UE | Uu (RRC measurement reports with serving and neighbor results and A3 event triggers) → O-DU / O-CU-CP → **E2 (KPM)** or **O1 traces** | The reporting period is configured by the network, so check it gives about 1 s resolution |
+| `cqi` | UE | Uu (CSI report) → O-DU → **E2 (KPM)** or **O1 traces** | |
+| `ta`, `phr` | O-DU (MAC/PHY): timing advance and the UE's power-headroom reports | **E2 (KPM)**, or vendor traces over **O1** | Per-UE, per-second availability depends on the vendor and on the E2 service models the node supports |
+| `ul_sinr`, `dl_bler`, `harq_retx` | O-DU (PHY/MAC): uplink SINR, HARQ ACK/NACK results and retransmission counts | **E2 (KPM)**, or vendor traces over **O1** | Same availability caveat as above |
+| `ho_cmd` | O-CU-CP: handover commands (RRC reconfiguration with synchronization) | **E2 (RC)** event triggers, or **O1** traces | Useful to label handovers and to separate handover failures (timer T304) from RLFs |
+| `prb_util`, `connected_ues` | Cell level, O-DU / O-CU: PRB usage and RRC-connected users, as defined in 3GPP TS 28.552 | **O1** PM counters, or E2-KPM cell measurements | Coarse (often 15 minutes) over O1 |
+| `a3_offset`, `hysteresis`, `ttt_ms` | O-CU-CP: handover (A3) measurement configuration | **O1** configuration management, or the RRC configuration | Changes rarely, so low-rate collection is enough |
+| `hour_of_day` | Derived from the timestamp | n/a | |
+| `rlf` (the label) | The UE declares it; the network sees the consequence | **O1** traces and counters; RRC re-establishment requests and "radio connection with UE lost" releases at the O-CU; **E2-RC** events; the UE RLF report | Defined [below](#recognizing-an-rlf-in-real-data); the network sees it late |
 
 The network does not see an RLF directly, because the UE declares it (for example when timer T310 expires). Network-side evidence includes RRC re-establishment requests, UE context releases with the cause "radio connection with UE lost", and UE RLF reports. Choose one operational definition and keep it fixed, since it defines the label.
 
@@ -177,7 +159,9 @@ The network does not see an RLF directly, because the UE declares it (for exampl
 - UE-level traces are personal data in most jurisdictions: pseudonymize and agree retention with the operator.
 - Models trained on one vendor or cell type may need retraining elsewhere; the cell hold-out score is the early warning.
 
-*This mapping comes from general 3GPP and O-RAN knowledge and has not been checked against a specific vendor's data model.*
+**Closing the loop:** a model trained and tracked in the SMO (MLflow) can be deployed to the near-RT RIC as an xApp, or to the non-RT RIC as an rApp, with policies and models delivered over **A1** and mitigation actions (for example a handover or parameter change) sent back to the RAN over **E2-RC**.
+
+*This mapping comes from general 3GPP and O-RAN knowledge. Which interfaces, service models and per-UE metrics are exposed varies by vendor and release, and it has not been checked against a specific vendor's data model.*
 
 ### `RLF_features.py`: features and labels
 
