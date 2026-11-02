@@ -121,10 +121,15 @@ Both are third-party microservices that hold optimization logic on top of a RIC 
 | AI/ML role | Mostly inference | Training, model management, analytics |
 | RLF role in this project | Score each UE every second from E2 data; trigger a pre-emptive handover over E2-RC within policy | Retrain the model on O1 traces and labels; tune per-cell handover parameters; send A1 policies such as a cap on pre-emptive handovers |
 
-**Many xApps share one Near-RT RIC.** A RIC typically hosts several different xApps at once, often from different vendors: for example the RLF xApp next to a traffic-steering xApp and a slice-assurance xApp, as in the diagram. They share the platform's services: E2 subscriptions (one E2 report can feed several xApps), the shared data layer (one xApp can publish results, such as per-UE RLF risk scores, for others to read), and messaging. The same applies to rApps on the Non-RT RIC. Two consequences for the RLF application:
+**Many xApps share one Near-RT RIC.** A RIC typically hosts several different xApps at once, often from different vendors: for example the RLF xApp next to a traffic-steering xApp and a slice-assurance xApp, as in the diagram. They share the platform's services: E2 subscriptions (one E2 report can feed several xApps), the shared data layer (one xApp can publish results, such as per-UE RLF risk scores, for others to read), and messaging. Two consequences for the RLF application:
 
 - **Conflicts.** Different xApps may want to change the same thing: the RLF xApp asking for a pre-emptive handover while a traffic-steering or mobility xApp moves the same UE or tunes the same handover parameters. The RIC's conflict mitigation function, and A1 policies that assign each xApp what it may control, are what keep them from fighting. Until that is settled, the RLF xApp should stay advisory (alerts only) or publish risk scores for the mobility xApp to use, rather than act itself.
 - **Shared inputs, separate outputs.** Several xApps subscribing to the same E2SM-KPM and E2SM-RC data is normal and cheaper than duplicating collection, but each xApp's actions and model versions must be logged separately so outcomes can be traced to the right one.
+
+**Many rApps share one Non-RT RIC.** The Non-RT RIC also hosts several different rApps at once, for example the RLF trainer next to an energy-saving rApp and a mobility robustness optimization (MRO) rApp, as in the diagram. R1 is what makes them portable across SMO vendors, and its data management and exposure service works as a producer and consumer system: each rApp registers the data types it publishes and subscribes to those it needs. For the RLF application:
+
+- **Shared outputs.** The RLF trainer can publish per-cell RLF risk as a data type, which the MRO rApp can use to decide where handover parameters need tuning.
+- **Overlapping actions.** The MRO rApp and any RLF-driven parameter tuning both change `a3_offset`, `hysteresis` and `ttt_ms`, and an energy-saving rApp that switches cells off changes coverage and therefore RLF risk. The SMO must decide which rApp owns which parameters and coordinate changes, in the same way the Near-RT RIC's conflict mitigation does for xApps. Until then, the RLF trainer should only train models and recommend changes, not apply them.
 
 #### Where the RLF application sits
 
@@ -132,7 +137,7 @@ The RLF anomaly detection application is not one box but two cooperating compone
 
 | Component | Location | Job |
 | --- | --- | --- |
-| **RLF trainer rApp** | Non-RT RIC, in the SMO | Builds features and labels from the data lake, trains and evaluates the models (`RLF_features.py`, `RLF_train.py`), and decides the alert policy |
+| **RLF trainer rApp** ("RLF trainer" in the diagram) | Non-RT RIC, in the SMO | Builds features and labels from the data lake, trains and evaluates the models (`RLF_features.py`, `RLF_train.py`), and decides the alert policy |
 | **Data and AI/ML platform** | SMO | Data lake for O1 data, plus MLflow tracking and the model registry |
 | **RLF xApp** | Near-RT RIC, edge site | Receives E2 data, runs the registered model, raises alerts and, optionally, mitigation |
 

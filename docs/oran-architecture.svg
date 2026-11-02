@@ -73,8 +73,8 @@ text{font-family:Helvetica, Arial, sans-serif}
 
 <!-- SMO internals -->
 <g class="n ric"><rect class="b" x="80" y="86" width="360" height="60" rx="7"/><text class="t" x="260" y="104" text-anchor="middle">rApps</text>
-  <rect x="92" y="112" width="170" height="26" rx="5" style="fill:#fbe8f1;stroke:#b02a6b;stroke-width:1.5"/><text x="177" y="129" text-anchor="middle" style="font-size:12px;font-weight:600;fill:#b02a6b">RLF trainer rApp</text>
-  <rect x="274" y="112" width="154" height="26" rx="5" fill="#ffffff"/><text class="s" x="351" y="129" text-anchor="middle" style="fill:#17212c">other rApps</text></g>
+  <rect x="92" y="112" width="118" height="26" rx="5" style="fill:#fbe8f1;stroke:#b02a6b;stroke-width:1.5"/><text x="151" y="129" text-anchor="middle" style="font-size:12px;font-weight:600;fill:#b02a6b">RLF trainer</text>
+  <rect x="218" y="112" width="106" height="26" rx="5" fill="#ffffff"/><text class="s" x="271" y="129" text-anchor="middle" style="fill:#17212c">Energy saving</text><rect x="332" y="112" width="96" height="26" rx="5" fill="#ffffff"/><text class="s" x="380" y="129" text-anchor="middle" style="fill:#17212c">MRO</text></g>
 <g class="n ric"><rect class="b" x="80" y="176" width="360" height="60" rx="7"/><text class="t" x="260" y="201" text-anchor="middle">Non-RT RIC framework</text><text class="s" x="260" y="221" text-anchor="middle">policy · data exposure · model mgmt</text></g>
 <g class="n ext"><rect class="b" x="520" y="100" width="280" height="90" rx="7"/><text class="t" x="660" y="136" text-anchor="middle">O-Cloud management</text><text class="s" x="660" y="158" text-anchor="middle">FOCOM · NFO (via O2)</text></g>
 <g class="n ext"><rect class="b" x="860" y="100" width="250" height="90" rx="7"/><text class="t" x="985" y="136" text-anchor="middle">Network management</text><text class="s" x="985" y="158" text-anchor="middle">FCAPS via O1 · NETCONF · VES</text></g>
