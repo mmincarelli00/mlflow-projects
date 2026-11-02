@@ -567,7 +567,7 @@ The tabular models therefore do **not** predict from a single raw sample: their 
 
 ## Results of the comparison tests
 
-> **Which settings produced these tables?** They were produced with the current defaults in `RLF_train.py` (`SEED = 42`, `TARGET_FPR = 0.01`), except where stated: the seed-40 runs changed the model seed, and the GRU run with a 60 s window logged `target_fpr = 0.02`, so its recall at the false-alarm rate is not strictly comparable with the others.
+> **Which settings produced these tables?** The current defaults in `RLF_train.py` (`SEED = 42`, `TARGET_FPR = 0.01`), except where stated: the seed-40 runs changed the model seed. A full re-run on 2 November 2026 with these defaults (GRU window 60 s) reproduced the 30 s tables exactly for every model except inference time, which varies from run to run with machine load, so the quality metrics are deterministic for a fixed data and model seed.
 
 A supervised GRU scores highest on PR-AUC at the 30 s horizon, but only by about 0.03, and several other differences shrink or reverse when the seed changes.
 
@@ -614,7 +614,7 @@ The z-score row is identical in every run (0.346, 0.185, 0.792, 6.25, 7.95, cell
 - **At a fixed alert budget the gain is small:** GRU recall at 1% FPR is 0.275 to 0.286 against 0.252 to 0.273 for boosting.
 - **Seed noise:** changing only the model seed moved XGBoost cell hold-out from 0.549 to 0.518, XGBoost lead from 17.6 s to 15.3 s, XGBoost recall from 0.268 to 0.252, and HistGradientBoosting PR-AUC from 0.415 to 0.403 (probably because its early stopping uses a random validation split).
 - **Claims that did not hold up:** that XGBoost gives the longest warning, that the GRU generalizes better to unseen cells, and that the GRU has the best event recall (it ranged from 0.715 to 0.801 across runs).
-- **Cost:** the GRU scores a row in 17 to 44 µs against 2.3 to 3.2 µs for XGBoost, and needs PyTorch.
+- **Cost:** the GRU scores a row in 17 to 44 µs against 2.0 to 3.2 µs for XGBoost (timings vary between runs with machine load), and needs PyTorch.
 
 ## Conclusions and caveats
 
@@ -625,7 +625,7 @@ On this synthetic data, supervised learning clearly beats the unsupervised metho
 - Supervised models (boosting, GRU) beat the z-score and Isolation Forest on PR-AUC and on recall at a fixed false-alarm rate.
 - XGBoost and HistGradientBoosting are equivalent in accuracy; XGBoost is faster and provides feature importances.
 - A 30 s horizon gives roughly 15 to 18 s of lead time, against 4 to 6 s at a 5 s horizon, at the cost of lower lift over chance.
-- The GRU improves PR-AUC by about 0.03, but changes the alert-budget results by only 0.01 to 0.03 and scores about 7 to 14 times slower than XGBoost.
+- The GRU improves PR-AUC by about 0.03, but changes the alert-budget results by only 0.01 to 0.03 and scores about 7 to 17 times slower than XGBoost.
 
 **Caveats**
 
@@ -633,7 +633,7 @@ On this synthetic data, supervised learning clearly beats the unsupervised metho
 - **Limited variation.** All runs share one dataset (data seed 7, 325 events). The seed-40 run changed only model randomness. Differences below about 0.01 in PR-AUC, 0.03 in recall or cell hold-out, and 2 s in lead time should be treated as noise.
 - **Oracle threshold.** The alert threshold comes from the test fold's own normal rows. A deployed system would use a fixed threshold and perform somewhat worse.
 - **Unequal inputs.** The tabular models see 105 engineered features; the GRU sees 13 raw channels, and a 60 s window gives it a longer history than any rolling feature except `secs_since_a3`.
-- **`TARGET_FPR` consistency.** The metric name `recall_at_1pct_fpr` is fixed and matches the current `TARGET_FPR = 0.01`, but the GRU run with a 60 s window logged `target_fpr = 0.02`; check that all compared runs used the same value.
+- **`TARGET_FPR` consistency.** The metric name `recall_at_1pct_fpr` is fixed and matches the current `TARGET_FPR = 0.01`. If the constant is changed, re-run all models so the compared runs use the same false-alarm rate.
 - **GRU logging.** Recent MLflow versions default to a PyTorch format that needs an input example, so the code requests pickle and falls back to saving the weights. The pickle route worked on the author's machine; the fallback path has not been tested.
 
 ## Next steps
@@ -704,7 +704,7 @@ A pragmatic path is to start as an **advisory service on O1 and trace data**, th
 - **Alert budget.** The experiment reports about 7 alert episodes per UE-hour on synthetic data, which would be unusable in a NOC. In production, alert at cell or UE-group level, require persistence, and tune against an agreed budget of alerts per cell per day.
 - **Horizon by use case.** A 30 s horizon gives roughly 15 to 18 s of lead time in the tests; a 5 s horizon gives 4 to 6 s. Choose per action: a handover or parameter change needs more warning than a notification.
 - **Model choice.** XGBoost is the sensible default (fast, with feature importances). The GRU gained about 0.03 PR-AUC on synthetic data at higher compute cost and is a candidate only if the gain holds on real data.
-- **Cost.** Model scoring is cheap in the tests (about 2 to 3 µs per row for XGBoost, 17 to 44 µs for the GRU). The cost of computing features per UE in a stream was not measured and will likely dominate.
+- **Cost.** Model scoring is cheap in the tests (about 2 to 3 µs per row for XGBoost, 17 to 44 µs for the GRU, varying with machine load). The cost of computing features per UE in a stream was not measured and will likely dominate.
 - **Explanations.** Show the top contributing KPIs with each alert so engineers can judge it.
 
 ### MLOps lifecycle with MLflow
