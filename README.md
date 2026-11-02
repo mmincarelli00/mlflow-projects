@@ -121,6 +121,11 @@ Both are third-party microservices that hold optimization logic on top of a RIC 
 | AI/ML role | Mostly inference | Training, model management, analytics |
 | RLF role in this project | Score each UE every second from E2 data; trigger a pre-emptive handover over E2-RC within policy | Retrain the model on O1 traces and labels; tune per-cell handover parameters; send A1 policies such as a cap on pre-emptive handovers |
 
+**Many xApps share one Near-RT RIC.** A RIC typically hosts several different xApps at once, often from different vendors: for example the RLF xApp next to a traffic-steering xApp and a slice-assurance xApp, as in the diagram. They share the platform's services: E2 subscriptions (one E2 report can feed several xApps), the shared data layer (one xApp can publish results, such as per-UE RLF risk scores, for others to read), and messaging. The same applies to rApps on the Non-RT RIC. Two consequences for the RLF application:
+
+- **Conflicts.** Different xApps may want to change the same thing: the RLF xApp asking for a pre-emptive handover while a traffic-steering or mobility xApp moves the same UE or tunes the same handover parameters. The RIC's conflict mitigation function, and A1 policies that assign each xApp what it may control, are what keep them from fighting. Until that is settled, the RLF xApp should stay advisory (alerts only) or publish risk scores for the mobility xApp to use, rather than act itself.
+- **Shared inputs, separate outputs.** Several xApps subscribing to the same E2SM-KPM and E2SM-RC data is normal and cheaper than duplicating collection, but each xApp's actions and model versions must be logged separately so outcomes can be traced to the right one.
+
 #### Where the RLF application sits
 
 The RLF anomaly detection application is not one box but two cooperating components, one per RIC, plus the SMO's data and ML platform. They are pink in the diagram, and the numbers below match the numbered markers.

@@ -86,10 +86,10 @@ text{font-family:Helvetica, Arial, sans-serif}
 <!-- Near-RT RIC (edge site) -->
 <g class="n ric"><rect class="b" x="100" y="380" width="440" height="120" rx="8"/><text class="t" x="320" y="404" text-anchor="middle">Near-RT RIC</text>
   <rect x="130" y="416" width="112" height="30" rx="5" style="fill:#fbe8f1;stroke:#b02a6b;stroke-width:1.5"/><text x="186" y="436" text-anchor="middle" style="font-size:12px;font-weight:600;fill:#b02a6b">RLF xApp</text>
-  <rect x="264" y="416" width="112" height="30" rx="5" fill="#ffffff"/><text class="s" x="320" y="436" text-anchor="middle" style="fill:#17212c">xApp</text>
-  <rect x="398" y="416" width="112" height="30" rx="5" fill="#ffffff"/><text class="s" x="454" y="436" text-anchor="middle" style="fill:#17212c">xApp</text>
+  <rect x="254" y="416" width="132" height="30" rx="5" fill="#ffffff"/><text class="s" x="320" y="436" text-anchor="middle" style="fill:#17212c">Traffic steering</text>
+  <rect x="398" y="416" width="124" height="30" rx="5" fill="#ffffff"/><text class="s" x="460" y="436" text-anchor="middle" style="fill:#17212c">Slice assurance</text>
   <text class="s" x="320" y="470" text-anchor="middle">E2 termination · subscriptions · SDL · conflict mitigation</text>
-  <text class="s" x="320" y="488" text-anchor="middle">cloud-native workload · loops 10 ms – 1 s</text></g>
+  <text class="s" x="320" y="488" text-anchor="middle">many xApps, often from different vendors · loops 10 ms – 1 s</text></g>
 
 <!-- external nodes -->
 <g class="n ext"><rect class="b" x="1120" y="345" width="220" height="60" rx="7"/><text class="t" x="1230" y="370" text-anchor="middle">Y1 users</text><text class="s" x="1230" y="390" text-anchor="middle">NOC · RLF alert dashboards</text></g>
