@@ -133,7 +133,13 @@ Both are third-party microservices that hold optimization logic on top of a RIC 
 
 #### Where the RLF application sits
 
-The RLF anomaly detection application is not one box but two cooperating components, one per RIC, plus the SMO's data and ML platform. They are pink in the [RLF application diagram](#rlf-application-diagram).
+The RLF anomaly detection application is not one box but two cooperating components, one per RIC, plus the SMO's data and ML platform. They are pink in the [RLF application diagram](#rlf-application-diagram) below.
+
+<a id="rlf-application-diagram"></a>
+
+![Where the RLF anomaly detection application sits in the O-RAN architecture](docs/rlf-application-architecture.png)
+
+*The RLF anomaly detection application inside the O-RAN architecture. Pink marks its components (the RLF trainer rApp in the SMO, the data and MLflow platform, and the RLF xApp on the Near-RT RIC) and its own data flows. Filled markers T1 to T4 are the training phase, including the collection of training data; outlined markers I1 to I4 are the inference phase; arrows show the direction of each flow. The steps are explained in the tables below. A vector version is in [`docs/rlf-application-architecture.svg`](docs/rlf-application-architecture.svg).*
 
 | Component | Location | Job |
 | --- | --- | --- |
@@ -278,12 +284,6 @@ In short, per-UE KPIs and RRC events come mainly from the **O-DU and O-CU over E
 This is an experiment that tests failure-prediction models on the radio links of an O-RAN-based Radio Access Network, using synthetic data.
 
 The scope is to analyze O-RAN RAN-level anomalies and implement failure-prediction models for **radio link failure (RLF)**, built on an open-source MLOps stack (MLflow).
-
-<a id="rlf-application-diagram"></a>
-
-![Where the RLF anomaly detection application sits in the O-RAN architecture](docs/rlf-application-architecture.png)
-
-*The RLF anomaly detection application inside the O-RAN architecture. Pink marks its components (the RLF trainer rApp in the SMO, the data and MLflow platform, and the RLF xApp on the Near-RT RIC) and its own data flows. Filled markers T1 to T4 are the training phase, including the collection of training data; outlined markers I1 to I4 are the inference phase; arrows show the direction of each flow. The steps are explained in [Where the RLF application sits](#where-the-rlf-application-sits). A vector version is in [`docs/rlf-application-architecture.svg`](docs/rlf-application-architecture.svg).*
 
 The pipeline has three parts:
 
