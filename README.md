@@ -436,7 +436,7 @@ In real data the `rlf` column, and therefore every label, comes from evidence on
 
 **Command-line options:** `--horizon`, `--n-ues`, `--seconds`, `--seed` (data), `--n-splits`, `--csv` (real data with the same columns), `--tracking-uri`, `--experiment`, `--gru-window` (default 60) and `--gru-epochs` (default 12). There is no option to skip the GRU, so PyTorch and XGBoost must both be installed.
 
-**Constants in the code:** `SEED = 50` (model randomness) and `TARGET_FPR = 0.02` (false-alarm rate used to set the alert threshold).
+**Constants in the code:** `SEED = 42` (model randomness) and `TARGET_FPR = 0.01` (false-alarm rate used to set the alert threshold).
 
 ## Quick start
 
@@ -467,7 +467,7 @@ Every family is trained and scored on the same time-ordered splits, so differenc
 - **1 final model** trained on all the data and logged to MLflow. It has no test score.
 - Inside training, the GRU holds out the last 15% of its training period to choose the best epoch, and scikit-learn's HistGradientBoosting uses its own internal early-stopping validation when the data is large.
 
-**Alert threshold:** each model outputs a risk score per UE-second. In every test fold the threshold is set at the 98th percentile of the scores of normal rows (`1 − TARGET_FPR`, with `TARGET_FPR = 0.02`), so 2% of normal seconds raise an alert. This gives every model the same false-alarm budget. Because it is computed from the test labels, a live system would need a threshold fixed in advance.
+**Alert threshold:** each model outputs a risk score per UE-second. In every test fold the threshold is set at the 99th percentile of the scores of normal rows (`1 − TARGET_FPR`, with `TARGET_FPR = 0.01`), so 1% of normal seconds raise an alert. This gives every model the same false-alarm budget. Because it is computed from the test labels, a live system would need a threshold fixed in advance.
 
 **Metrics**
 
@@ -481,7 +481,7 @@ Every family is trained and scored on the same time-ordered splits, so differenc
 | `infer_us_per_sample` | Scoring time per row, in microseconds | Lower |
 | `cell_holdout_pr_auc` | `pr_auc` on unseen cells | Higher |
 
-The column name `recall_at_1pct_fpr` is fixed in the code. With the current `TARGET_FPR = 0.02` it actually holds recall at a **2%** false-alarm rate, and the same applies to any other value.
+The column name `recall_at_1pct_fpr` is fixed in the code and matches the current `TARGET_FPR = 0.01`. If `TARGET_FPR` is changed (for example to 0.02), the name stays the same but the value then refers to the new rate.
 
 ## Model families
 
@@ -567,7 +567,7 @@ The tabular models therefore do **not** predict from a single raw sample: their 
 
 ## Results of the comparison tests
 
-> **Which settings produced these tables?** The tables below were produced with earlier settings (model seed 42, or 40 where stated; `TARGET_FPR` was 0.01 in the version first used, and at least one run logged `target_fpr = 0.02`). The current `RLF_train.py` uses `SEED = 50` and `TARGET_FPR = 0.02`, so re-run it before comparing new numbers with these; recall at the false-alarm rate in particular is not comparable between 1% and 2%.
+> **Which settings produced these tables?** They were produced with the current defaults in `RLF_train.py` (`SEED = 42`, `TARGET_FPR = 0.01`), except where stated: the seed-40 runs changed the model seed, and the GRU run with a 60 s window logged `target_fpr = 0.02`, so its recall at the false-alarm rate is not strictly comparable with the others.
 
 A supervised GRU scores highest on PR-AUC at the 30 s horizon, but only by about 0.03, and several other differences shrink or reverse when the seed changes.
 
@@ -633,7 +633,7 @@ On this synthetic data, supervised learning clearly beats the unsupervised metho
 - **Limited variation.** All runs share one dataset (data seed 7, 325 events). The seed-40 run changed only model randomness. Differences below about 0.01 in PR-AUC, 0.03 in recall or cell hold-out, and 2 s in lead time should be treated as noise.
 - **Oracle threshold.** The alert threshold comes from the test fold's own normal rows. A deployed system would use a fixed threshold and perform somewhat worse.
 - **Unequal inputs.** The tabular models see 105 engineered features; the GRU sees 13 raw channels, and a 60 s window gives it a longer history than any rolling feature except `secs_since_a3`.
-- **`TARGET_FPR` consistency.** The metric name `recall_at_1pct_fpr` is fixed, but the current code uses `TARGET_FPR = 0.02` and at least one earlier run also logged 0.02; check that all compared runs used the same value.
+- **`TARGET_FPR` consistency.** The metric name `recall_at_1pct_fpr` is fixed and matches the current `TARGET_FPR = 0.01`, but the GRU run with a 60 s window logged `target_fpr = 0.02`; check that all compared runs used the same value.
 - **GRU logging.** Recent MLflow versions default to a PyTorch format that needs an input example, so the code requests pickle and falls back to saving the weights. The pickle route worked on the author's machine; the fallback path has not been tested.
 
 ## Next steps
