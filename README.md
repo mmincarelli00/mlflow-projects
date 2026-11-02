@@ -133,7 +133,7 @@ Both are third-party microservices that hold optimization logic on top of a RIC 
 
 #### Where the RLF application sits
 
-The RLF anomaly detection application is not one box but two cooperating components, one per RIC, plus the SMO's data and ML platform. They are pink in the diagram, and the numbers below match the numbered markers.
+The RLF anomaly detection application is not one box but two cooperating components, one per RIC, plus the SMO's data and ML platform. They are pink in the diagram.
 
 | Component | Location | Job |
 | --- | --- | --- |
@@ -141,16 +141,29 @@ The RLF anomaly detection application is not one box but two cooperating compone
 | **Data and AI/ML platform** | SMO | Data lake for O1 data, plus MLflow tracking and the model registry |
 | **RLF xApp** | Near-RT RIC, edge site | Receives E2 data, runs the registered model, raises alerts and, optionally, mitigation |
 
+The application works in two phases, which the diagram separates: filled markers **T1 to T4** for the training phase (including the collection of training data) and outlined markers **I1 to I4** for the inference phase.
+
+**Training phase**: offline, in the SMO and its data platform, run periodically or when quality drops.
+
 | Step | What happens | Interfaces |
 | --- | --- | --- |
-| 1. Collect | E2SM-KPM and E2SM-RC reports reach the RLF xApp; O1 PM, traces and MDT flow through network management into the data lake | E2, O1 |
-| 2. Train | The trainer rApp reads training data from the data lake, trains and compares models, and registers the chosen one in MLflow | R1 (data management and exposure), inside the SMO |
-| 3. Deploy | The model and its alert policy (threshold, alert budget, action limits) go to the Near-RT RIC; the xApp workload itself is deployed on the O-Cloud | A1 for model and policy, O2 for the xApp |
-| 4. Score | The xApp scores every UE each second from its feature window and merges alerts within one horizon into episodes | Inside the Near-RT RIC |
-| 5. Act | Alerts go to NOC dashboards and the OSS; in the closed-loop phase, a pre-emptive handover or parameter change is sent to the O-CU-CP | Y1 for alerts, E2-RC for actions |
-| 6. Learn | Outcomes (did an RLF follow?) and new labels return to the data lake for retraining and drift monitoring | O1, E2 |
+| T1. Collect training data | O1 PM counters, traces, MDT and UE RLF reports flow through network management into the data lake. E2 records (KPM and RC reports) are exported from the Near-RT RIC into the same lake, because the per-UE features come from E2 | O1; E2 records exported from the RIC (dotted pink flow) |
+| T2. Train and register | The trainer rApp reads the data lake, builds features and labels, trains and compares models, and registers the chosen one in MLflow | R1 (data management and exposure), inside the SMO |
+| T3. Deploy | The registered model and its alert policy (threshold, alert budget, action limits) go to the Near-RT RIC; the xApp workload itself is deployed on the O-Cloud | A1 for model and policy, O2 for the xApp |
+| T4. Retrain | Outcomes of the alerts (did an RLF follow?) and new RLF labels return to the data lake, for retraining and drift monitoring | O1 |
 
-During the experiment only steps 1 and 2 exist, on synthetic data. Steps 3 to 6 are the path described in [From experiment to a service assurance application](#from-experiment-to-a-service-assurance-application) and [Evolving into an automated closed loop with the SMO](#evolving-into-an-automated-closed-loop-with-the-smo).
+**Inference phase**: online, in the Near-RT RIC, every second.
+
+| Step | What happens | Interfaces |
+| --- | --- | --- |
+| I1. Ingest live data | Live E2SM-KPM and E2SM-RC reports reach the RLF xApp | E2 |
+| I2. Score | The xApp builds each UE's feature window with the same feature code and version as training, scores it, and merges alerts within one horizon into episodes | Inside the Near-RT RIC |
+| I3. Alert | Alerts go to NOC dashboards and the OSS | Y1 |
+| I4. Act (optional) | In the closed-loop phase, a pre-emptive handover or parameter change goes to the O-CU-CP | E2-RC |
+
+The same E2 data serves both phases: live in I1, and as history in T1. This is why the feature code (`RLF_features.py`, `FEATURE_VERSION`) must be shared between the trainer and the xApp.
+
+During the experiment only steps T1 and T2 exist, on synthetic data. The other steps are the path described in [From experiment to a service assurance application](#from-experiment-to-a-service-assurance-application) and [Evolving into an automated closed loop with the SMO](#evolving-into-an-automated-closed-loop-with-the-smo).
 
 ### Interfaces
 
