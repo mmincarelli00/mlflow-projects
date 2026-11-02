@@ -12,10 +12,11 @@ text{font-family:Helvetica, Arial, sans-serif}
 .f-app .lk{stroke:#b02a6b;stroke-width:2.4;stroke-dasharray:2 5;stroke-linecap:round}
 .f-oran text{fill:#5546c2} .f-o1 text{fill:#bf332c} .f-e2 text{fill:#b86200} .f-gpp text{fill:#0d7468} .f-app text{fill:#b02a6b}
 .ll{font-family:Menlo, Consolas, monospace;font-size:12.5px;font-weight:bold}
-.mk rect{fill:#b02a6b} .mk text{fill:#ffffff;font-family:Menlo, Consolas, monospace;font-size:10.5px;font-weight:bold} .mki rect{fill:#ffffff;stroke:#b02a6b;stroke-width:1.6} .mki text{fill:#b02a6b;font-family:Menlo, Consolas, monospace;font-size:10.5px;font-weight:bold}
+.dir path{fill:none;stroke:#b02a6b;stroke-width:2.2} .mk rect{fill:#b02a6b} .mk text{fill:#ffffff;font-family:Menlo, Consolas, monospace;font-size:10.5px;font-weight:bold} .mki rect{fill:#ffffff;stroke:#b02a6b;stroke-width:1.6} .mki text{fill:#b02a6b;font-family:Menlo, Consolas, monospace;font-size:10.5px;font-weight:bold}
 .e2n rect{fill:#ffffff;stroke:#b86200;stroke-width:1.2}.e2n text{fill:#b86200;font-family:Menlo, Consolas, monospace;font-size:10.5px;font-weight:bold}
 </style>
 <rect width="1400" height="1530" fill="#ffffff"/>
+<defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" style="fill:#b02a6b"/></marker></defs>
 
 <!-- containers -->
 <rect x="40" y="40" width="1320" height="220" rx="12" fill="#f4f2fc" stroke="#5546c2" stroke-width="1.2"/>
@@ -40,20 +41,21 @@ text{font-family:Helvetica, Arial, sans-serif}
   <path class="lk" d="M50 705H70A8 8 0 0 1 86 705H202A8 8 0 0 1 218 705H512A8 8 0 0 1 528 705H600V660"/>
   <path class="lk" d="M50 845H100"/>
   <path class="lk" d="M50 992H260"/>
-  <text class="ll" x="970" y="280">O1</text>
+  <text class="ll" x="930" y="282">O1</text>
   <text class="ll" x="150" y="984">O1*</text>
 </g>
 <g data-if="APP" class="f-app">
-  <path class="lk" d="M1110 145H1150"/>
-  <path class="lk" d="M1240 190V215H968A8 8 0 0 0 952 215H798A8 8 0 0 0 782 215H440"/>
-  <path class="lk" d="M540 395H760V298A8 8 0 0 0 760 282V215"/>
+  <path class="lk" d="M1110 145H1148" marker-end="url(#ah)"/>
+  <path class="lk" d="M1240 192V215H968A8 8 0 0 0 952 215H798A8 8 0 0 0 782 215H442" marker-start="url(#ah)" marker-end="url(#ah)"/>
+  <path class="lk" d="M540 395H760V298A8 8 0 0 0 760 282V232H782A8 8 0 0 1 798 232H952A8 8 0 0 1 968 232H1290V192" marker-end="url(#ah)"/>
+  <text class="ll" x="1090" y="250">E2 records export</text>
   <text class="ll" x="482" y="208">training data · models</text>
 </g>
 <!-- links -->
 <g data-if="R1" class="f-oran"><path class="lk" d="M260 146V176"/><text class="ll" x="270" y="166">R1</text></g>
 <g data-if="A1" class="f-oran"><path class="lk" d="M260 236V380"/><text class="ll" x="272" y="256">A1</text><text x="272" y="273" style="font-size:12px;fill:#5a6775">policies · enrichment · models</text></g>
 <g data-if="Y1" class="f-oran"><path class="lk" d="M540 420H1100V375H1120"/><text class="ll" x="560" y="412">Y1</text></g>
-<g data-if="O2" class="f-oran"><path class="lk" d="M790 190V330"/><text class="ll" x="802" y="244">O2</text><text x="802" y="262" style="font-size:12px;fill:#5a6775">O2ims · O2dms</text></g>
+<g data-if="O2" class="f-oran"><path class="lk" d="M790 190V330"/><text class="ll" x="802" y="256">O2</text><text x="802" y="273" style="font-size:12px;fill:#5a6775">O2ims · O2dms</text></g>
 
 <g data-if="E2" class="f-e2">
   <path class="lk" d="M180 500V590"/><path class="lk" d="M440 500V590"/>
@@ -111,12 +113,19 @@ text{font-family:Helvetica, Arial, sans-serif}
 <g data-if="E2N" class="e2n"><rect x="110" y="797" width="64" height="18" rx="9"/><text x="142" y="810" text-anchor="middle">E2 node</text></g>
 <g data-if="E2N" class="e2n"><rect x="1268" y="717" width="64" height="18" rx="9"/><text x="1300" y="730" text-anchor="middle">E2 node</text></g>
 <!-- RLF application -->
+<g data-if="APP" class="dir">
+  <path d="M166 578V536" marker-end="url(#ah)"/>
+  <path d="M196 528V576" marker-end="url(#ah)"/>
+  <path d="M246 242V282" marker-end="url(#ah)"/>
+  <path d="M642 433H700" marker-end="url(#ah)"/>
+  <path d="M978 286V246" marker-end="url(#ah)"/>
+</g>
 <g data-if="APP" class="mk"><rect x="1117" y="115" width="26" height="18" rx="9"/><text x="1130" y="128" text-anchor="middle">T1</text></g>
 <g data-if="APP" class="mk"><rect x="747" y="311" width="26" height="18" rx="9"/><text x="760" y="324" text-anchor="middle">T1</text></g>
 <g data-if="APP" class="mk"><rect x="449" y="194" width="26" height="18" rx="9"/><text x="462" y="207" text-anchor="middle">T2</text></g>
-<g data-if="APP" class="mk"><rect x="229" y="243" width="26" height="18" rx="9"/><text x="242" y="256" text-anchor="middle">T3</text></g>
-<g data-if="APP" class="mk"><rect x="991" y="267" width="26" height="18" rx="9"/><text x="1004" y="280" text-anchor="middle">T4</text></g>
-<g data-if="APP" class="mki"><rect x="209" y="504" width="26" height="18" rx="9"/><text x="222" y="517" text-anchor="middle">I1</text></g>
+<g data-if="APP" class="mk"><rect x="213" y="253" width="26" height="18" rx="9"/><text x="226" y="266" text-anchor="middle">T3</text></g>
+<g data-if="APP" class="mk"><rect x="997" y="253" width="26" height="18" rx="9"/><text x="1010" y="266" text-anchor="middle">T4</text></g>
+<g data-if="APP" class="mki"><rect x="132" y="511" width="26" height="18" rx="9"/><text x="145" y="524" text-anchor="middle">I1</text></g>
 <g data-if="APP" class="mki"><rect x="102" y="422" width="26" height="18" rx="9"/><text x="115" y="435" text-anchor="middle">I2</text></g>
 <g data-if="APP" class="mki"><rect x="609" y="411" width="26" height="18" rx="9"/><text x="622" y="424" text-anchor="middle">I3</text></g>
 <g data-if="APP" class="mki"><rect x="209" y="539" width="26" height="18" rx="9"/><text x="222" y="552" text-anchor="middle">I4</text></g>
@@ -143,7 +152,7 @@ text{font-family:Helvetica, Arial, sans-serif}
 <line x1="700" y1="1342" x2="750" y2="1342" stroke="#bf332c" stroke-width="2.2" stroke-dasharray="7 4"/><text x="762" y="1346" style="font-size:12.5px;fill:#17212c">O1: PM, FM, configuration, traces (labels, cell counters)</text>
 <line x1="700" y1="1368" x2="750" y2="1368" stroke="#5546c2" stroke-width="2.6"/><text x="762" y="1372" style="font-size:12.5px;fill:#17212c">Other O-RAN interfaces: A1, R1, Y1, O2, Open Fronthaul</text>
 <line x1="700" y1="1394" x2="750" y2="1394" stroke="#0d7468" stroke-width="2.6"/><text x="762" y="1398" style="font-size:12.5px;fill:#17212c">3GPP interfaces: E1, F1, NG, Xn, X2, Uu</text>
-<line x1="700" y1="1420" x2="750" y2="1420" stroke="#b02a6b" stroke-width="2.4" stroke-dasharray="2 5" stroke-linecap="round"/><text x="762" y="1424" style="font-size:12.5px;fill:#17212c">RLF application: components and training data flows; T = training, I = inference</text>
+<line x1="700" y1="1420" x2="750" y2="1420" stroke="#b02a6b" stroke-width="2.4" stroke-dasharray="2 5" stroke-linecap="round"/><text x="762" y="1424" style="font-size:12.5px;fill:#17212c">RLF application flows; arrows show direction; T = training, I = inference</text>
 <rect x="700" y="1436" width="50" height="18" rx="4" fill="none" stroke="#17212c" stroke-width="1.6" stroke-dasharray="10 5"/><text x="762" y="1450" style="font-size:12.5px;fill:#17212c">One gNB (3GPP base station)</text>
 <g class="e2n"><rect x="1010" y="1436" width="64" height="18" rx="9"/><text x="1042" y="1449" text-anchor="middle">E2 node</text></g><text x="1084" y="1450" style="font-size:12.5px;fill:#17212c">terminates E2</text>
 <rect x="700" y="1466" width="50" height="20" rx="4" fill="#f7f8fa" stroke="#0d7468" stroke-width="1.4" stroke-dasharray="8 5"/><text x="762" y="1481" style="font-size:12.5px;fill:#17212c">O-Cloud; thin dotted boxes are its sites</text>

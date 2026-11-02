@@ -141,13 +141,13 @@ The RLF anomaly detection application is not one box but two cooperating compone
 | **Data and AI/ML platform** | SMO | Data lake for O1 data, plus MLflow tracking and the model registry |
 | **RLF xApp** | Near-RT RIC, edge site | Receives E2 data, runs the registered model, raises alerts and, optionally, mitigation |
 
-The application works in two phases, which the diagram separates: filled markers **T1 to T4** for the training phase (including the collection of training data) and outlined markers **I1 to I4** for the inference phase.
+The application works in two phases, which the diagram separates: filled markers **T1 to T4** for the training phase (including the collection of training data) and outlined markers **I1 to I4** for the inference phase. Pink arrows show the direction of each step's flow: dotted pink lines are the application's own data flows (O1 data and exported E2 records into the data lake, training data to the trainer and models back to MLflow), and short pink arrows next to an interface show which way a step uses it.
 
 **Training phase**: offline, in the SMO and its data platform, run periodically or when quality drops.
 
 | Step | What happens | Interfaces |
 | --- | --- | --- |
-| T1. Collect training data | O1 PM counters, traces, MDT and UE RLF reports flow through network management into the data lake. E2 records (KPM and RC reports) are exported from the Near-RT RIC into the same lake, because the per-UE features come from E2 | O1; E2 records exported from the RIC (dotted pink flow) |
+| T1. Collect training data | O1 PM counters, traces, MDT and UE RLF reports flow through network management into the data lake. E2 records (KPM and RC reports) are exported from the Near-RT RIC into the same lake, because the per-UE features come from E2 | O1; E2 records exported from the RIC (separate dotted pink line, "E2 records export") |
 | T2. Train and register | The trainer rApp reads the data lake, builds features and labels, trains and compares models, and registers the chosen one in MLflow | R1 (data management and exposure), inside the SMO |
 | T3. Deploy | The registered model and its alert policy (threshold, alert budget, action limits) go to the Near-RT RIC; the xApp workload itself is deployed on the O-Cloud | A1 for model and policy, O2 for the xApp |
 | T4. Retrain | Outcomes of the alerts (did an RLF follow?) and new RLF labels return to the data lake, for retraining and drift monitoring | O1 |
