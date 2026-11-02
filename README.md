@@ -36,7 +36,7 @@ The experiment predicts radio link failures (RLF) from per-UE KPIs. In a real O-
 
 ![O-RAN logical architecture and interfaces](docs/oran-architecture.png)
 
-*Logical view based on the O-RAN Alliance architecture, for NR standalone plus EN-DC. Amber (E2) and red dashed (O1) are the two interfaces that carry the experiment's data; purple lines are the other O-RAN interfaces and teal lines are 3GPP interfaces. The black dashed outline is one gNB, the amber tags mark E2 nodes, and the O-Cloud spans an edge site and a far-edge site. A vector version is in [`docs/oran-architecture.svg`](docs/oran-architecture.svg).*
+*Logical view based on the O-RAN Alliance architecture, for NR standalone plus EN-DC. Amber (E2) and red dashed (O1) are the two interfaces that carry the experiment's data; purple lines are the other O-RAN interfaces and teal lines are 3GPP interfaces. The black dashed outline is one gNB, the amber tags mark E2 nodes, and the O-Cloud spans an edge site and a far-edge site. Pink marks the RLF anomaly detection application: its components, its own data flows and numbered steps explained in [Where the RLF application sits](#where-the-rlf-application-sits). A vector version is in [`docs/oran-architecture.svg`](docs/oran-architecture.svg).*
 
 ### O-RAN in brief
 
@@ -120,6 +120,27 @@ Both are third-party microservices that hold optimization logic on top of a RIC 
 | Data | E2 reports (KPM, RRC events) | O1 PM, FM, CM and traces, external data |
 | AI/ML role | Mostly inference | Training, model management, analytics |
 | RLF role in this project | Score each UE every second from E2 data; trigger a pre-emptive handover over E2-RC within policy | Retrain the model on O1 traces and labels; tune per-cell handover parameters; send A1 policies such as a cap on pre-emptive handovers |
+
+#### Where the RLF application sits
+
+The RLF anomaly detection application is not one box but two cooperating components, one per RIC, plus the SMO's data and ML platform. They are pink in the diagram, and the numbers below match the numbered markers.
+
+| Component | Location | Job |
+| --- | --- | --- |
+| **RLF trainer rApp** | Non-RT RIC, in the SMO | Builds features and labels from the data lake, trains and evaluates the models (`RLF_features.py`, `RLF_train.py`), and decides the alert policy |
+| **Data and AI/ML platform** | SMO | Data lake for O1 data, plus MLflow tracking and the model registry |
+| **RLF xApp** | Near-RT RIC, edge site | Receives E2 data, runs the registered model, raises alerts and, optionally, mitigation |
+
+| Step | What happens | Interfaces |
+| --- | --- | --- |
+| 1. Collect | E2SM-KPM and E2SM-RC reports reach the RLF xApp; O1 PM, traces and MDT flow through network management into the data lake | E2, O1 |
+| 2. Train | The trainer rApp reads training data from the data lake, trains and compares models, and registers the chosen one in MLflow | R1 (data management and exposure), inside the SMO |
+| 3. Deploy | The model and its alert policy (threshold, alert budget, action limits) go to the Near-RT RIC; the xApp workload itself is deployed on the O-Cloud | A1 for model and policy, O2 for the xApp |
+| 4. Score | The xApp scores every UE each second from its feature window and merges alerts within one horizon into episodes | Inside the Near-RT RIC |
+| 5. Act | Alerts go to NOC dashboards and the OSS; in the closed-loop phase, a pre-emptive handover or parameter change is sent to the O-CU-CP | Y1 for alerts, E2-RC for actions |
+| 6. Learn | Outcomes (did an RLF follow?) and new labels return to the data lake for retraining and drift monitoring | O1, E2 |
+
+During the experiment only steps 1 and 2 exist, on synthetic data. Steps 3 to 6 are the path described in [From experiment to a service assurance application](#from-experiment-to-a-service-assurance-application) and [Evolving into an automated closed loop with the SMO](#evolving-into-an-automated-closed-loop-with-the-smo).
 
 ### Interfaces
 
