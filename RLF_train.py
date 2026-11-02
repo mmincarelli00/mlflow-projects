@@ -34,8 +34,8 @@ from sklearn.ensemble import HistGradientBoostingClassifier
 import torch
 from torch import nn
 
-SEED = 50
-TARGET_FPR = 0.02
+SEED = 42
+TARGET_FPR = 0.01
 
 BASELINE_COLS = ["rsrp_slope_5s", "sinr_slope_5s", "nb_gap", "dl_bler_mean_5s",
                  "harq_retx_mean_5s", "ta_slope_30s"]
