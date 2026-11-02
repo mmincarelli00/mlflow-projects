@@ -36,7 +36,7 @@ The experiment predicts radio link failures (RLF) from per-UE KPIs. In a real O-
 
 ![O-RAN logical architecture and interfaces](docs/oran-architecture.png)
 
-*Logical view based on the O-RAN Alliance architecture, for NR standalone plus EN-DC. Amber (E2) and red dashed (O1) are the two interfaces that carry the experiment's data; purple lines are the other O-RAN interfaces and teal lines are 3GPP interfaces. The black dashed outline is one gNB, the amber tags mark E2 nodes, and the O-Cloud spans an edge site and a far-edge site. Pink marks the RLF anomaly detection application: its components, its own data flows and numbered steps explained in [Where the RLF application sits](#where-the-rlf-application-sits). A vector version is in [`docs/oran-architecture.svg`](docs/oran-architecture.svg).*
+*Logical view based on the O-RAN Alliance architecture, for NR standalone plus EN-DC. Amber (E2) and red dashed (O1) are the two interfaces that carry the experiment's data; purple lines are the other O-RAN interfaces and teal lines are 3GPP interfaces. The black dashed outline is one gNB, the amber tags mark E2 nodes, and the O-Cloud spans an edge site and a far-edge site. Where the RLF application itself sits is shown in a [second diagram](#rlf-application-diagram). A vector version is in [`docs/oran-architecture.svg`](docs/oran-architecture.svg).*
 
 ### O-RAN in brief
 
@@ -121,19 +121,19 @@ Both are third-party microservices that hold optimization logic on top of a RIC 
 | AI/ML role | Mostly inference | Training, model management, analytics |
 | RLF role in this project | Score each UE every second from E2 data; trigger a pre-emptive handover over E2-RC within policy | Retrain the model on O1 traces and labels; tune per-cell handover parameters; send A1 policies such as a cap on pre-emptive handovers |
 
-**Many xApps share one Near-RT RIC.** A RIC typically hosts several different xApps at once, often from different vendors: for example the RLF xApp next to a traffic-steering xApp and a slice-assurance xApp, as in the diagram. They share the platform's services: E2 subscriptions (one E2 report can feed several xApps), the shared data layer (one xApp can publish results, such as per-UE RLF risk scores, for others to read), and messaging. Two consequences for the RLF application:
+**Many xApps share one Near-RT RIC.** A RIC typically hosts several different xApps at once, often from different vendors: for example the RLF xApp next to a traffic-steering xApp and a slice-assurance xApp, as in the [RLF application diagram](#rlf-application-diagram). They share the platform's services: E2 subscriptions (one E2 report can feed several xApps), the shared data layer (one xApp can publish results, such as per-UE RLF risk scores, for others to read), and messaging. Two consequences for the RLF application:
 
 - **Conflicts.** Different xApps may want to change the same thing: the RLF xApp asking for a pre-emptive handover while a traffic-steering or mobility xApp moves the same UE or tunes the same handover parameters. The RIC's conflict mitigation function, and A1 policies that assign each xApp what it may control, are what keep them from fighting. Until that is settled, the RLF xApp should stay advisory (alerts only) or publish risk scores for the mobility xApp to use, rather than act itself.
 - **Shared inputs, separate outputs.** Several xApps subscribing to the same E2SM-KPM and E2SM-RC data is normal and cheaper than duplicating collection, but each xApp's actions and model versions must be logged separately so outcomes can be traced to the right one.
 
-**Many rApps share one Non-RT RIC.** The Non-RT RIC also hosts several different rApps at once, for example the RLF trainer next to an energy-saving rApp and a mobility robustness optimization (MRO) rApp, as in the diagram. R1 is what makes them portable across SMO vendors, and its data management and exposure service works as a producer and consumer system: each rApp registers the data types it publishes and subscribes to those it needs. For the RLF application:
+**Many rApps share one Non-RT RIC.** The Non-RT RIC also hosts several different rApps at once, for example the RLF trainer next to an energy-saving rApp and a mobility robustness optimization (MRO) rApp, as in the [RLF application diagram](#rlf-application-diagram). R1 is what makes them portable across SMO vendors, and its data management and exposure service works as a producer and consumer system: each rApp registers the data types it publishes and subscribes to those it needs. For the RLF application:
 
 - **Shared outputs.** The RLF trainer can publish per-cell RLF risk as a data type, which the MRO rApp can use to decide where handover parameters need tuning.
 - **Overlapping actions.** The MRO rApp and any RLF-driven parameter tuning both change `a3_offset`, `hysteresis` and `ttt_ms`, and an energy-saving rApp that switches cells off changes coverage and therefore RLF risk. The SMO must decide which rApp owns which parameters and coordinate changes, in the same way the Near-RT RIC's conflict mitigation does for xApps. Until then, the RLF trainer should only train models and recommend changes, not apply them.
 
 #### Where the RLF application sits
 
-The RLF anomaly detection application is not one box but two cooperating components, one per RIC, plus the SMO's data and ML platform. They are pink in the diagram.
+The RLF anomaly detection application is not one box but two cooperating components, one per RIC, plus the SMO's data and ML platform. They are pink in the [RLF application diagram](#rlf-application-diagram).
 
 | Component | Location | Job |
 | --- | --- | --- |
@@ -141,7 +141,7 @@ The RLF anomaly detection application is not one box but two cooperating compone
 | **Data and AI/ML platform** | SMO | Data lake for O1 data, plus MLflow tracking and the model registry |
 | **RLF xApp** | Near-RT RIC, edge site | Receives E2 data, runs the registered model, raises alerts and, optionally, mitigation |
 
-The application works in two phases, which the diagram separates: filled markers **T1 to T4** for the training phase (including the collection of training data) and outlined markers **I1 to I4** for the inference phase. Pink arrows show the direction of each step's flow: dotted pink lines are the application's own data flows (O1 data and exported E2 records into the data lake, training data to the trainer and models back to MLflow), and short pink arrows next to an interface show which way a step uses it.
+The application works in two phases, which the RLF application diagram separates: filled markers **T1 to T4** for the training phase (including the collection of training data) and outlined markers **I1 to I4** for the inference phase. Pink arrows show the direction of each step's flow: dotted pink lines are the application's own data flows (O1 data and exported E2 records into the data lake, training data to the trainer and models back to MLflow), and short pink arrows next to an interface show which way a step uses it.
 
 **Training phase**: offline, in the SMO and its data platform, run periodically or when quality drops.
 
@@ -279,6 +279,12 @@ This is an experiment that tests failure-prediction models on the radio links of
 
 The scope is to analyze O-RAN RAN-level anomalies and implement failure-prediction models for **radio link failure (RLF)**, built on an open-source MLOps stack (MLflow).
 
+<a id="rlf-application-diagram"></a>
+
+![Where the RLF anomaly detection application sits in the O-RAN architecture](docs/rlf-application-architecture.png)
+
+*The RLF anomaly detection application inside the O-RAN architecture. Pink marks its components (the RLF trainer rApp in the SMO, the data and MLflow platform, and the RLF xApp on the Near-RT RIC) and its own data flows. Filled markers T1 to T4 are the training phase, including the collection of training data; outlined markers I1 to I4 are the inference phase; arrows show the direction of each flow. The steps are explained in [Where the RLF application sits](#where-the-rlf-application-sits). A vector version is in [`docs/rlf-application-architecture.svg`](docs/rlf-application-architecture.svg).*
+
 The pipeline has three parts:
 
 | Step | File | Job |
@@ -297,7 +303,9 @@ The pipeline has three parts:
 ├── RLF_requirements.txt    # mlflow, numpy, pandas, scikit-learn, xgboost (torch is also required: add it to this file or install it separately)
 └── docs/
     ├── oran-architecture.png   # O-RAN architecture diagram used in this README
-    └── oran-architecture.svg   # vector version of the same diagram
+    ├── oran-architecture.svg   # vector version of the same diagram
+    ├── rlf-application-architecture.png   # the same architecture with the RLF application placed in it
+    └── rlf-application-architecture.svg   # vector version
 ```
 
 ## The three files
