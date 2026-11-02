@@ -9,6 +9,12 @@
 ## Table of contents
 
 - [O-RAN interfaces involved in this experiment](#o-ran-interfaces-involved-in-this-experiment)
+  - [O-RAN in brief](#o-ran-in-brief)
+  - [Nodes](#nodes)
+  - [Interfaces](#interfaces)
+  - [E2 in detail: the primary data source](#e2-in-detail-the-primary-data-source)
+  - [O1 in detail: the secondary data source](#o1-in-detail-the-secondary-data-source)
+  - [Getting the data when E2 and O1 are encrypted](#getting-the-data-when-e2-and-o1-are-encrypted)
 - [Purpose and context](#purpose-and-context)
 - [Repository layout](#repository-layout)
 - [The three files](#the-three-files)
@@ -26,43 +32,202 @@
 
 ## O-RAN interfaces involved in this experiment
 
-The experiment predicts radio link failures (RLF) from per-UE KPIs. In a real O-RAN deployment those KPIs travel over a handful of standard interfaces, so this section shows where each one sits and which nodes and interfaces can supply the data.
+The experiment predicts radio link failures (RLF) from per-UE KPIs. In a real O-RAN deployment those KPIs travel over standard interfaces, and two of them carry everything the pipeline needs: **E2** (per-UE, per-second KPIs and RRC events, the primary source) and **O1** (labels, cell counters, configuration and traces, the secondary source). This section explains the architecture around them, then covers E2 and O1 in detail and how to obtain their data on a live network.
 
 ![O-RAN logical architecture and interfaces](docs/oran-architecture.png)
 
-*Simplified logical view based on the O-RAN Alliance architecture. Orange (E2) and red dashed (O1) are the two interfaces that carry the experiment's data; the ML platform (feature building, training, MLflow) sits in or next to the SMO.*
+*Logical view based on the O-RAN Alliance architecture, for NR standalone plus EN-DC. Amber (E2) and red dashed (O1) are the two interfaces that carry the experiment's data; purple lines are the other O-RAN interfaces and teal lines are 3GPP interfaces. The black dashed outline is one gNB, the amber tags mark E2 nodes, and the O-Cloud spans an edge site and a far-edge site. A vector version is in [`docs/oran-architecture.svg`](docs/oran-architecture.svg).*
+
+### O-RAN in brief
+
+O-RAN does not replace the 3GPP 5G architecture; it builds on it. In short:
+
+**O-RAN = 3GPP NG-RAN + an open lower-layer split + two RAN Intelligent Controllers + open management and cloud.**
+
+- **3GPP NG-RAN, kept as is.** The gNB is split into a central unit (CU), itself split into control plane (CU-CP) and user plane (CU-UP), and a distributed unit (DU), connected by the 3GPP interfaces F1 and E1. Towards the core and other base stations nothing changes: NG, Xn and X2 are plain 3GPP, and the 5G core cannot tell an O-RAN gNB from any other.
+- **Open lower-layer split (7.2x).** O-RAN splits the 3GPP gNB-DU again, into an **O-DU** and an **O-RU**, and standardizes the link between them (Open Fronthaul). 3GPP studied this split but left it proprietary, so this is what lets radios and baseband come from different vendors.
+- **RAN Intelligent Controllers.** In 3GPP, radio resource management (handover decisions, load balancing, scheduling policy) sits inside the gNB and is vendor-specific. O-RAN exposes it through **E2** to a **Near-RT RIC** (control loops of 10 ms to 1 s, running xApps), steered by a **Non-RT RIC** in the SMO (loops above 1 s, running rApps) through **A1**.
+- **Open management and cloud.** The **SMO** manages every element over **O1** (aligned with 3GPP SA5 management) and the cloud platform, the **O-Cloud**, over **O2**.
+
+How the 5G NR protocol stack maps onto the nodes:
+
+| NR layer | 3GPP node | O-RAN node |
+| --- | --- | --- |
+| RRC, PDCP-C | gNB-CU-CP | O-CU-CP |
+| SDAP, PDCP-U | gNB-CU-UP | O-CU-UP |
+| RLC, MAC, High-PHY | gNB-DU | O-DU |
+| Low-PHY, RF | gNB-DU (internal) | O-RU |
+
+Control happens at three time scales: real time (under 10 ms) inside the O-DU, for example MAC scheduling; near-real time (10 ms to 1 s) in the Near-RT RIC over E2; and non-real time (above 1 s) in the Non-RT RIC and SMO over A1 and O1. An RLF predictor with 15 to 30 s of lead time fits the near-real-time loop.
 
 ### Nodes
 
-| Node | Role | Relevance to RLF prediction |
+| Node | Role | Hosted on | gNB part | E2 node | Relevance to RLF prediction |
+| --- | --- | --- | --- | --- | --- |
+| **UE** | The user device. Measures the radio link and declares an RLF (timer T310 expiry) | Device | No | No | Source of RSRP, RSRQ, SINR, CQI, neighbor-cell results, A3 triggers and RLF reports, sent as RRC messages |
+| **O-RU** | Low-PHY, RF and antennas | Physical hardware, outside the O-Cloud | Yes (with the O-DU it forms the gNB-DU) | No | Raw radio signals; reaches the pipeline only indirectly |
+| **O-DU** | RLC, MAC, High-PHY, the real-time scheduler | O-Cloud far-edge site | Yes | Yes | Best source of per-UE, per-second KPIs: UL SINR, DL BLER, HARQ retransmissions, timing advance, power headroom, CQI |
+| **O-CU-CP** | RRC and PDCP-C | O-Cloud edge site | Yes | Yes | Handover commands, measurement reports, RRC re-establishment requests and UE context releases: the network-side evidence of an RLF |
+| **O-CU-UP** | SDAP and PDCP-U | O-Cloud edge site | Yes | Yes | Traffic and throughput KPIs; not needed for the current features |
+| **O-eNB** | LTE base station supporting E2 and O1 | Physical or cloud | No (it is an LTE eNB) | Yes | The master node in EN-DC; reports both LTE and NR-leg failures (see below) |
+| **Near-RT RIC** | Hosts xApps; terminates E2 | O-Cloud edge site | No | No (it is the other end of E2) | Natural place to collect E2 data and to run a trained model in near-real time |
+| **Non-RT RIC** | Hosts rApps; part of the SMO | SMO cloud | No | No | Training, model management and policy; deploys models and policies through A1 |
+| **SMO** | Service Management and Orchestration | Operator cloud (not required to be an O-Cloud) | No | No | Collects O1 data, holds the data stores and the ML platform (MLflow in this project) |
+| **O-Cloud** | Cloud platform hosting the O-CU, O-DU and Near-RT RIC, with its IMS and DMS management services | Edge and far-edge sites | n/a | n/a | Infrastructure only; managed over O2 |
+
+#### gNB and E2 nodes
+
+- A **gNB**, in 3GPP terms, is exactly one O-CU-CP, its O-CU-UPs and its O-DUs with their O-RUs, under one gNB ID. A cell belongs to one O-DU. As the diagram shows, one gNB spans the edge site, the far-edge site and the radio.
+- An **E2 node** is any RAN node that runs an E2 agent, so the Near-RT RIC can monitor and control it: the O-CU-CP, O-CU-UP, O-DU and O-eNB. The definition is about function, not radio generation. The O-RU is part of the gNB but not an E2 node.
+
+**Why the O-eNB is an E2 node.** Most 5G traffic today still depends on LTE. In 5G non-standalone (EN-DC), the LTE eNB is the master node: it holds the RRC connection, makes mobility decisions and adds or releases the NR leg. Multi-layer use cases (LTE/NR traffic steering, dynamic spectrum sharing, layer switch-off for energy saving) need both sides, and operators want one RIC for their whole brownfield network. An LTE eNB is usually monolithic, so the whole O-eNB is a single E2 node. For RLF prediction this matters because in EN-DC both failure types go through the eNB: an **MCG failure** (RLF on the LTE leg, a real drop) and an **SCG failure** (RLF on the NR leg, reported by the UE through the eNB with SCGFailureInformation). With EN-DC traffic, many RLF labels therefore appear at the O-eNB, not at the gNB.
+
+#### How many of each
+
+| Relationship | Rule |
+| --- | --- |
+| O-CU-CP → O-DU | One CU-CP controls many DUs; each DU connects to one CU-CP (3GPP TS 38.401) |
+| O-CU-CP → O-CU-UP | One CU-CP controls one or more CU-UPs; each CU-UP belongs to one CU-CP |
+| O-DU → O-RU | One DU serves many RUs and cells; an RU is normally tied to one DU (shared-RU options exist) |
+| Near-RT RIC → E2 nodes | One RIC handles many E2 nodes, often from several gNBs; an E2 node normally connects to one RIC |
+| Non-RT RIC → Near-RT RIC | One Non-RT RIC manages many Near-RT RICs over A1 |
+
+Typical orders of magnitude, set by vendor products rather than the specs: a handful to a few dozen cells per DU, tens to a few hundred DUs per CU-CP, and tens to hundreds of E2 nodes (often thousands of cells) per Near-RT RIC. For an RLF xApp this means: data volume scales with the RIC's whole area (tens of thousands of per-UE records per second are realistic); a UE can be followed across DUs of the same CU-CP but its history breaks at a handover to another RIC's area; UE IDs are only unique per CU-CP, so features must be keyed on gNB ID plus cell ID; and the cell hold-out score in `RLF_train.py` is the right early check for generalization across the many DUs one RIC sees.
+
+#### Hosting: the O-Cloud and its sites
+
+The **O-Cloud** is the cloud platform that hosts the RAN software as containers or VMs: servers, switches, accelerators and timing hardware, the cloud software (Kubernetes, SR-IOV, DPDK), and two management services reached by the SMO over O2: **IMS** (infrastructure management, through O2ims) and **DMS** (deployment management, through O2dms, often the Kubernetes API). It differs from an IT cloud in three ways: the O-DU has real-time needs (slots of 0.5 to 1 ms, so real-time kernels, CPU pinning, hugepages); forward error correction is offloaded to accelerators through O-RAN's Acceleration Abstraction Layer (AAL); and nodes hosting DUs need PTP and SyncE timing.
+
+An O-Cloud is usually many sites, not one data center:
+
+| Site | Distance to the radio | Hosts |
 | --- | --- | --- |
-| **UE** | The user device. It measures the radio link and declares an RLF (timer T310 expiry) | Source of RSRP, RSRQ, SINR, CQI, neighbor-cell results, A3 triggers and RLF reports, all sent as RRC messages |
-| **O-RU** (radio unit) | Low-PHY, RF and antennas | Raw radio signals; reaches the ML pipeline only indirectly (through the DU and management interfaces) |
-| **O-DU** (distributed unit) | RLC, MAC, high-PHY and the scheduler | Best source of per-UE, per-second KPIs: UL SINR, DL BLER, HARQ retransmissions, timing advance, power headroom, PRB usage |
-| **O-CU-CP** (central unit, control plane) | RRC and PDCP-C | Handover commands, measurement reports, RRC re-establishment requests and UE context releases: the network-side evidence of an RLF |
-| **O-CU-UP** (central unit, user plane) | SDAP and PDCP-U | Traffic and throughput KPIs; not needed for the current features |
-| **Near-RT RIC** | Hosts xApps, control loops of 10 ms to 1 s | Natural place to run a trained RLF model in near-real time, and the entry point for E2 data |
-| **Non-RT RIC** (inside the SMO) | Hosts rApps, control loops above 1 s | Training, model management and policy; deploys models through A1 |
-| **SMO** | Service Management and Orchestration | Collects O1 data, holds the data stores and the ML platform (MLflow in this project) |
-| **O-Cloud** | The cloud platform hosting the virtual O-CU, O-DU and RICs | Infrastructure only; managed over O2 |
+| Far edge (cell site or hub) | Fronthaul under about 100 µs | O-DU |
+| Edge (regional data center) | A few ms | O-CU-CP, O-CU-UP, Near-RT RIC |
+| Regional or central | Tens of ms | SMO, Non-RT RIC |
+
+The O-RU stays physical. The SMO usually runs on a cloud too, but O-RAN does not require it to be an O-Cloud, which is why it manages the O-Cloud over O2 from outside.
+
+#### rApps and xApps
+
+Both are third-party microservices that hold optimization logic on top of a RIC platform, which provides messaging, data storage, subscriptions, conflict handling and security. The name **xApp** comes from the xRAN Forum, one of O-RAN's founding bodies, and was used from the start in the O-RAN Software Community's Near-RT RIC. **rApp** was coined later for Non-RT RIC applications; the "r" is usually read as "RAN". Neither letter has a formal expansion in the specifications.
+
+| | xApp | rApp |
+| --- | --- | --- |
+| Host | Near-RT RIC (edge site) | Non-RT RIC (SMO) |
+| Control loop | 10 ms to 1 s | Above 1 s |
+| Reaches the RAN through | E2, via the RIC platform API | R1, which maps to A1, O1 and O2 services |
+| Data | E2 reports (KPM, RRC events) | O1 PM, FM, CM and traces, external data |
+| AI/ML role | Mostly inference | Training, model management, analytics |
+| RLF role in this project | Score each UE every second from E2 data; trigger a pre-emptive handover over E2-RC within policy | Retrain the model on O1 traces and labels; tune per-cell handover parameters; send A1 policies such as a cap on pre-emptive handovers |
 
 ### Interfaces
 
-| Interface | Between | Carries | Source of experiment data? |
+| Interface | Between | Carries | Defined by | Source of experiment data? |
+| --- | --- | --- | --- | --- |
+| **E2** | Near-RT RIC ↔ O-CU-CP, O-CU-UP, O-DU, O-eNB | E2AP procedures carrying service models: KPM (measurements), RC (RAN control and RRC events), NI, CCC | O-RAN WG3 | **Yes, primary**: per-UE, per-second KPIs and RRC events |
+| **O1** | SMO ↔ every managed element | FCAPS: configuration, performance counters, alarms, traces, software and files | O-RAN WG10, 3GPP SA5 models | **Yes, secondary**: labels, cell counters, configuration, traces |
+| **A1** | Non-RT RIC → Near-RT RIC | Policies (A1-P), enrichment information (A1-EI), ML model management | O-RAN WG2 | No; the route to deploy a trained model or its policies |
+| **R1** | rApps ↔ Non-RT RIC framework | Service exposure for rApps: data management and exposure (DME), A1/O1/O2 services, AI/ML workflow | O-RAN WG2 | Indirectly: how an rApp would request O1 data |
+| **Y1** | Near-RT RIC → external consumers | RAN analytics, by request or subscription | O-RAN WG3 | Possibly: a route to export RIC-derived data |
+| **O2** | SMO ↔ O-Cloud | Infrastructure (O2ims) and workload (O2dms) management | O-RAN WG6 | No |
+| **Open Fronthaul** | O-DU ↔ O-RU | Split 7.2x: C-plane, U-plane (IQ samples), S-plane (timing), M-plane (O-RU management) | O-RAN WG4 | No (low-level radio data) |
+| **E1** | O-CU-CP ↔ O-CU-UP | Bearer context management | 3GPP TS 38.46x | No |
+| **F1-C / F1-U** | O-CU ↔ O-DU | F1AP signalling (UE context, RRC transfer) / user data with flow control | 3GPP TS 38.47x | Indirectly, through traces |
+| **NG-C / NG-U** | O-CU ↔ 5G core (AMF / UPF) | NGAP signalling (sessions, core-side handover, paging) / user data | 3GPP TS 38.41x | Indirectly: release causes seen by the core |
+| **Xn-C / Xn-U** | O-CU ↔ neighbor gNB | Handover, dual connectivity, load coordination / data forwarding | 3GPP TS 38.42x | Handover context only |
+| **X2** | gNB ↔ O-eNB | EN-DC coordination (X2-C from the CU-CP, X2-U from the CU-UP) | 3GPP TS 36.42x | Handover and EN-DC context |
+| **Uu** | UE ↔ O-RU | The NR air interface: RRC, measurement reports, RLF reports, user data | 3GPP TS 38.300, 38.331 | Carries the UE's measurements to the network |
+
+E2 and O1 get their own colors in the diagram only because they carry the experiment's data; both are O-RAN interfaces like A1, R1, Y1, O2 and Open Fronthaul.
+
+#### Protocols, data formats and tappability
+
+"Tappable by probes" says whether a passive monitoring tool (a TAP, a mirror port or a virtual-switch mirror feeding a probe or Wireshark) can capture the traffic and read it without help from the endpoints. **Yes**: no standard encryption, readable on the wire. **Conditional**: readable only when the operator has not enabled IPsec or DTLS, which 3GPP and O-RAN require nodes to support but leave to the operator to switch on. **Restricted**: always encrypted (TLS, SSH) or not on a physical link, so the data must come from endpoint logs, collectors or vendor trace.
+
+| Interface | Protocol stack | Data format | Tappable by probes |
 | --- | --- | --- | --- |
-| **E2** | Near-RT RIC ↔ O-CU / O-DU | E2SM-KPM measurement reports (per cell and, where supported, per UE) and E2SM-RC control and RRC events | **Yes, primary** for per-UE, per-second KPIs |
-| **O1** | SMO ↔ every managed element (near-RT RIC, O-CU, O-DU, O-RU) | Performance counters (PM), alarms (FM), configuration, trace and log files | **Yes, secondary**: cell counters, configuration, traces and RLF-related events; counters are usually in 15-minute files |
-| **A1** | Non-RT RIC → Near-RT RIC | Policies, ML model deployment, enrichment information | No. It is the route to **deploy** a trained model to an xApp |
-| **O2** | SMO ↔ O-Cloud | Management of cloud resources and deployments | No |
-| **F1-c / F1-u** | O-CU ↔ O-DU | Control-plane and user-plane traffic between CU and DU | Indirectly, through CU and DU logs and traces |
-| **E1** | O-CU-CP ↔ O-CU-UP | Bearer management between the CU parts | No |
-| **Open Fronthaul** (split 7.2x) | O-DU ↔ O-RU | Control, user and synchronization planes, plus the M-plane for management | No (low-level radio data) |
-| **Uu** | UE ↔ O-RU | The radio link itself, including RRC measurement reports | Carries the UE's measurements to the network |
-| **NG, Xn** (not drawn) | O-CU ↔ 5G core, O-CU ↔ neighboring gNBs | Core signalling and inter-gNB mobility | Handover context only |
+| **E2** | E2AP over SCTP over IP | ASN.1 aligned PER (APER); service-model payloads are ASN.1 messages inside OCTET STRINGs | **Conditional**. Wireshark decodes E2AP; O-RAN security specifications call for IPsec on E2, after which a tap sees only ESP packets |
+| **O1** | NETCONF over SSH or TLS (configuration) · VES over HTTPS (events) · SFTP, FTPES or HTTPS (files) · WebSocket streaming for PM | YANG-modeled XML (NETCONF) · VES JSON · PM files in 3GPP XML (TS 32.435) or ASN.1 | **Restricted**. Always encrypted; read the data at the SMO collector instead |
+| **A1** | REST over HTTP/1.1 or HTTP/2 · TLS · TCP/IP | JSON; policy types described by JSON Schema | **Restricted**. Mutual TLS; read from RIC logs |
+| **R1** | Service-based REST APIs (OpenAPI) · TLS with OAuth 2.0; data delivery may use a message bus such as Kafka | JSON | **Restricted**. Usually inside the SMO cluster (service mesh with mTLS); needs a virtual tap or API-gateway logs |
+| **Y1** | Service-based REST APIs (OpenAPI) · TLS with OAuth 2.0 | JSON | **Restricted**. TLS-protected |
+| **O2** | REST over HTTP (OpenAPI) · TLS; O2dms profiles use ETSI NFV-SOL APIs or the Kubernetes API | JSON; YAML for Kubernetes manifests and Helm charts | **Restricted**. TLS-protected |
+| **Open Fronthaul** | C/U-plane: eCPRI or IEEE 1914.3 RoE over Ethernet, optionally UDP/IP · S-plane: PTP and SyncE · M-plane: NETCONF over SSH or TLS | Binary eCPRI section messages; IQ samples, often compressed (block floating point) · M-plane YANG as XML | **Yes** for the C/U-plane (MACsec is optional), with a line-rate Ethernet probe and PTP timestamps; very large volumes. The M-plane is encrypted |
+| **E1** | E1AP over SCTP over IP | ASN.1 APER | **Conditional**. Often never leaves a server or cluster when both CU parts are co-located: capture then needs a virtual tap (vSwitch mirror, sidecar, eBPF) |
+| **F1-C** | F1AP over SCTP over IP | ASN.1 APER; embedded RRC in ASN.1 unaligned PER (UPER) | **Conditional**. RRC inside is ciphered by PDCP once radio security is active, so only the first RRC exchange is readable without keys |
+| **F1-U** | GTP-U over UDP over IP with NR-U extension headers (TS 38.425) | Binary GTP-U headers and packets | **Conditional**. Payloads are PDCP PDUs already ciphered for the radio, so user data is not readable |
+| **NG-C** | NGAP over SCTP over IP | ASN.1 APER; NAS as binary containers | **Conditional**. The classic probe point; NAS inside is ciphered after NAS security mode |
+| **NG-U** | GTP-U over UDP over IP | Binary GTP-U headers and the UE's IP packets | **Conditional**. Content interception is regulated (lawful interception) |
+| **Xn-C / Xn-U** | XnAP over SCTP / GTP-U over UDP | ASN.1 APER / binary GTP-U | **Conditional** |
+| **X2** | X2AP over SCTP (X2-C) / GTP-U over UDP (X2-U) | ASN.1 APER / binary GTP-U | **Conditional** |
+| **Uu** | NR radio stack: PHY, MAC, RLC, PDCP, SDAP; RRC on the control plane | RRC in ASN.1 UPER; binary MAC and RLC headers | **Restricted**. Needs a radio sniffer; ciphered after AS security activation; sniffing public radio is legally restricted in most countries |
+
+### E2 in detail: the primary data source
+
+**Protocol.** E2 runs the **E2 Application Protocol (E2AP)** over SCTP over IP, encoded in ASN.1 aligned PER. E2AP itself is generic: it sets up the connection (E2 Setup, where the node announces which RAN functions and service models it supports), manages subscriptions and carries four kinds of procedure:
+
+| Procedure | Direction | Meaning |
+| --- | --- | --- |
+| Report | E2 node → RIC | Send measurements or event copies, periodically or on a trigger |
+| Insert | E2 node → RIC | Pause a procedure and ask the RIC for a decision (for example, the target cell of a handover) |
+| Control | RIC → E2 node | Command an action (for example, trigger a handover) |
+| Policy | RIC → E2 node | Install a rule the node then applies by itself |
+
+**Service models (E2SM)** define what is observed and controlled. Two matter for this experiment:
+
+- **E2SM-KPM** (Key Performance Measurements) reports measurements at a configured period. Besides node and cell-level reports, it has UE-level report styles (one UE, UEs matching a condition, or several UEs per report). This is where per-UE DU and CU metrics come from: PRB use and throughput, and where the vendor supports them, CQI, BLER, HARQ retransmissions, timing advance, power headroom and UL SINR.
+- **E2SM-RC** (RAN Control) both controls and reports. Its "message copy" report style sends the RIC copies of selected RRC and network-interface messages: **MeasurementReport** (RSRP, RSRQ, SINR, neighbor results, A3 triggers), **RRCReconfiguration with sync** (handover commands), **RRCReestablishmentRequest** (the main RLF evidence) and **UE context release** with its cause. Its control styles are the route back into the RAN for a mitigation such as a pre-emptive handover.
+
+**Who sees E2 data.** E2 terminates in the Near-RT RIC. xApps never open an E2 connection themselves; they subscribe through the RIC platform (E2 termination and subscription manager) and receive decoded reports. That is also why IPsec on E2 does not stop a data-collection xApp: the RIC decrypts and decodes, and the xApp is an authorized consumer.
+
+**Caveat.** What an E2 node can report depends on the E2 service models, report styles and per-UE metrics its vendor implements. Check this before planning on 1-second per-UE DU KPIs.
+
+### O1 in detail: the secondary data source
+
+O1 is how the SMO manages every element (Near-RT RIC, O-CU, O-DU, O-RU through the M-plane, O-eNB). It combines two protocols plus file transfer.
+
+**NETCONF and YANG (configuration management).** NETCONF (IETF RFC 6241) reads and changes device configuration. It runs over SSH (port 830) or TLS. The SMO is the client and each element runs a NETCONF server. Messages are XML-encoded remote procedure calls: `get` and `get-config` to read, `edit-config` to change, `lock`/`unlock` and `commit` to apply changes atomically, plus notifications. **YANG** (RFC 7950) is the data-modeling language that defines what can be configured; O1 uses the 3GPP SA5 NR resource models (gNB, cells, neighbor relations) plus O-RAN's own modules. RESTCONF (RFC 8040) offers the same YANG data over HTTP with JSON, often on the SMO's northbound side. For this project, NETCONF is how `a3_offset`, `hysteresis` and `ttt_ms` are read, and how a closed loop would change them on the O-CU-CP.
+
+**VES (fault and performance events).** VES (VNF Event Stream) comes from the ONAP open-source project. Elements push JSON events by HTTPS POST to the SMO's VES collector, which validates them and publishes them on a message bus, usually Kafka. Every event has a common header (source, type, priority, timestamps, sequence number) and a domain body: `fault` (alarms), `measurement` and `perf3gpp` (counters), `notification` (for example "PM file ready"), `heartbeat`, and `stndDefined` (3GPP SA5 notifications inside a VES envelope).
+
+**Files.** Bulk PM is written by each element as 3GPP XML files, usually every 15 minutes, announced with a VES notification and downloaded by SFTP, FTPES or HTTPS. Trace files (below) travel the same way.
+
+| | NETCONF/YANG | VES |
+| --- | --- | --- |
+| Purpose | Configuration management | Fault and performance reporting |
+| Direction | SMO → element requests, plus notifications | Element → SMO collector (push) |
+| Encoding | XML following YANG models | JSON with a common header |
+| Transport | SSH or TLS | HTTPS |
+| Use in this project | Read handover parameters; later, change them | Alarms, cell counters (`prb_util`, `connected_ues`), file-ready notices |
+
+O1 counters are too coarse for the per-second features, so O1 serves the label, the configuration columns, the cell counters and, through trace, the RRC evidence.
+
+### Getting the data when E2 and O1 are encrypted
+
+On a live network, E2 is normally protected by IPsec and O1 is always encrypted (SSH, TLS, HTTPS), so the data cannot be sniffed. Encryption protects the transport, not access: the pipeline obtains the data as an **authorized endpoint**, from the components that terminate the encryption. In order of closeness to the target product:
+
+1. **A data-collection xApp on the Near-RT RIC (E2 data).** Subscribe to E2SM-KPM UE-level reports and E2SM-RC message copies, receive decoded records through the RIC platform, and stream them to Kafka or a data lake (or export them over Y1). The same xApp can later run the model.
+2. **An rApp or SMO consumer (O1 data).** Request PM, fault and configuration data types through R1 data management and exposure, or read the SMO and OSS northbound APIs: the VES collector's Kafka topics, the PM file store and the configuration database.
+3. **3GPP trace and MDT (works without a RIC).** Cell or UE trace (3GPP TS 32.421 to 32.423) records RRC, NGAP, F1AP, XnAP and X2AP messages as the node sees them, after radio deciphering and before transport encryption, and delivers them as files or streams. Immediate MDT (TS 37.320) adds periodic UE measurements, and the **UE RLF report** gives the measurements and time of each failure, the cleanest label available. Vendor call-trace exports often add the DU-level detail (BLER, HARQ, CQI, TA) that standard trace lacks.
+4. **Probes where traffic is in clear.** IPsec usually terminates at a security gateway in front of the core, so NG-C and NG-U are often readable between the gateway and the core; this gives core-side release causes but no radio KPIs. Some vendors also offer node-side capture before encryption or key export to approved probes.
+
+| Columns in `RLF_synthetic_data.py` | Best source with encryption on |
+| --- | --- |
+| `rsrp`, `rsrq`, `sinr`, `neighbor_rsrp`, `a3_events` | E2SM-RC message copy of MeasurementReport; or trace plus immediate MDT |
+| `cqi`, `dl_bler`, `harq_retx`, `ul_sinr`, `ta`, `phr` | E2SM-KPM UE-level reports, if the O-DU supports them; otherwise vendor DU call trace |
+| `ho_cmd` | E2SM-RC message copy of RRCReconfiguration with sync; or cell trace |
+| `rlf` (the label) | Trace or E2SM-RC: RRCReestablishmentRequest and "radio connection with UE lost" releases; MDT RLF report for exact timing; at the O-eNB for EN-DC traffic |
+| `prb_util`, `connected_ues` | O1 PM counters through DME, the SMO or the OSS (often 15-minute granularity); or E2SM-KPM cell-level reports |
+| `a3_offset`, `hysteresis`, `ttt_ms` | O1 configuration read through the SMO (NETCONF), or the configuration database |
+
+Every route needs the operator's agreement, credentials and a data agreement, and UE-level data is personal data: pseudonymize UE identifiers and limit retention. The hardest fields at 1-second resolution are the DU ones; if neither E2SM-KPM nor vendor trace provides them per UE, drop them as described in the [cautions below](#collecting-the-same-dataset-from-a-real-system). A realistic start is offline training from trace, MDT and PM exports for a pilot cluster, then a data-collection xApp once the operator's RIC and E2 nodes expose UE-level KPM and RC message copies.
 
 ### Where the experiment data can come from
 
-In short, per-UE KPIs come mainly from the **O-DU and O-CU over E2**, and labels, configuration and cell counters from **O1**. The column-by-column mapping, the collection paths and how to build the CSV are in [Collecting the same dataset from a real system](#collecting-the-same-dataset-from-a-real-system).
+In short, per-UE KPIs and RRC events come mainly from the **O-DU and O-CU over E2**, and labels, configuration and cell counters from **O1** (including trace and MDT). The column-by-column collection paths and how to build the CSV are in [Collecting the same dataset from a real system](#collecting-the-same-dataset-from-a-real-system).
+
+*This section is based on general 3GPP and O-RAN knowledge. Which interfaces, service models, report styles and per-UE metrics are exposed varies by vendor and specification release, and it has not been checked against a specific vendor's data model.*
 
 ## Purpose and context
 
@@ -87,7 +252,8 @@ The pipeline has three parts:
 ├── RLF_train.py            # training, evaluation and MLflow logging
 ├── RLF_requirements.txt    # mlflow, numpy, pandas, scikit-learn, xgboost (torch is also required: add it to this file or install it separately)
 └── docs/
-    └── oran-architecture.png
+    ├── oran-architecture.png   # O-RAN architecture diagram used in this README
+    └── oran-architecture.svg   # vector version of the same diagram
 ```
 
 ## The three files
