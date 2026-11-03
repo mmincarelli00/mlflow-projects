@@ -139,7 +139,7 @@ The RLF anomaly detection application is not one box but two cooperating compone
 
 ![Where the RLF anomaly detection application sits in the O-RAN architecture](docs/rlf-application-architecture.png)
 
-*Pink marks its components (the RLF trainer rApp in the SMO, the data and MLflow platform, and the RLF xApp on the Near-RT RIC) and its own data flows. Filled markers T1 to T4 are the training phase, including the collection of training data; outlined markers I1 to I4 are the inference phase; arrows show the direction of each flow. The steps are explained in the tables below. A vector version is in [`docs/rlf-application-architecture.svg`](docs/rlf-application-architecture.svg).*
+*Pink marks its components (the RLF trainer rApp in the SMO, the data and MLflow platform, and the RLF xApp on the Near-RT RIC) and its own data flows. Filled markers T1 to T4 are the training phase, including the collection of training data; outlined markers I1 to I4 are the inference phase; arrows show the direction of each flow, and the O-RAN and 3GPP interfaces also carry arrowheads (two heads where traffic runs both ways, one head for Y1). The steps are explained in the tables below. A vector version is in [`docs/rlf-application-architecture.svg`](docs/rlf-application-architecture.svg).*
 
 | Component | Location | Job |
 | --- | --- | --- |
