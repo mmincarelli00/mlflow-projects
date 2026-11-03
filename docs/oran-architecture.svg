@@ -1,6 +1,13 @@
-<svg id="map" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1170" width="1400" height="1170" role="img" aria-labelledby="mt md">
+<svg id="map" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1200" width="1400" height="1200" role="img" aria-labelledby="mt md">
 <title id="mt">O-RAN architecture and interfaces</title>
 <desc id="md">SMO with rApps and Non-RT RIC (R1), O1 dashed lines from the SMO to the Near-RT RIC, O-CU-CP, O-CU-UP, O-DU, O-RU and O-eNB, A1 down to the Near-RT RIC. The O-Cloud spans an edge site hosting the Near-RT RIC, O-CU-CP and O-CU-UP, and a far-edge site hosting the O-DU, managed by the SMO over O2 through IMS and DMS. E2 from the Near-RT RIC to the CU-CP, CU-UP and DU, Y1 to external users, O1 to every managed element. E1 between CU-CP and CU-UP, F1-C and F1-U from the edge site to the far-edge site, Open Fronthaul to the physical O-RU, Uu to the UE, NG-C and NG-U to the 5G core, Xn-C and Xn-U to a neighbor gNB and X2 to an O-eNB.</desc>
+<defs>
+<marker id="m-k" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#17212c"/></marker>
+<marker id="m-oran" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#5546c2"/></marker>
+<marker id="m-o1" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#bf332c"/></marker>
+<marker id="m-e2" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#b86200"/></marker>
+<marker id="m-gpp" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0d7468"/></marker>
+</defs>
 <style>
 text{font-family:Helvetica, Arial, sans-serif}
 .n rect{stroke:#7d8a98;stroke-width:1}
@@ -10,10 +17,11 @@ text{font-family:Helvetica, Arial, sans-serif}
 .lk{fill:none;stroke-width:2.6;stroke-linejoin:round}
 .f-oran .lk{stroke:#5546c2} .f-o1 .lk{stroke:#bf332c;stroke-width:2.2;stroke-dasharray:7 4} .f-e2 .lk{stroke:#b86200} .f-gpp .lk{stroke:#0d7468}
 .f-oran text{fill:#5546c2} .f-o1 text{fill:#bf332c} .f-e2 text{fill:#b86200} .f-gpp text{fill:#0d7468}
+.f-oran .two{marker-start:url(#m-oran);marker-end:url(#m-oran)} .f-oran .one{marker-end:url(#m-oran)} .f-o1 .two{marker-start:url(#m-o1);marker-end:url(#m-o1)} .f-o1 .end{marker-end:url(#m-o1)} .f-o1 .start{marker-start:url(#m-o1)} .f-e2 .two{marker-start:url(#m-e2);marker-end:url(#m-e2)} .f-gpp .two{marker-start:url(#m-gpp);marker-end:url(#m-gpp)}
 .ll{font-family:Menlo, Consolas, monospace;font-size:12.5px;font-weight:bold}
 .e2n rect{fill:#ffffff;stroke:#b86200;stroke-width:1.2}.e2n text{fill:#b86200;font-family:Menlo, Consolas, monospace;font-size:10.5px;font-weight:bold}
 </style>
-<rect width="1400" height="1170" fill="#ffffff"/>
+<rect width="1400" height="1200" fill="#ffffff"/>
 
 <!-- containers -->
 <rect x="40" y="40" width="1320" height="220" rx="12" fill="#f4f2fc" stroke="#5546c2" stroke-width="1.2"/>
@@ -31,38 +39,38 @@ text{font-family:Helvetica, Arial, sans-serif}
 <text x="620" y="1004" text-anchor="end" style="font-size:14px;font-weight:600;fill:#17212c">gNB</text>
 <text x="620" y="1022" text-anchor="end" style="font-size:12px;fill:#5a6775">one 3GPP base station</text></g>
 <g data-if="O1" class="f-o1">
-  <path class="lk" d="M960 190V290"/>
-  <path class="lk" d="M50 992V290H252A8 8 0 0 1 268 290H782A8 8 0 0 1 798 290H1352V745H1340"/>
-  <path class="lk" d="M50 400H100"/>
-  <path class="lk" d="M50 645H70A8 8 0 0 1 86 645H100"/>
-  <path class="lk" d="M50 705H70A8 8 0 0 1 86 705H202A8 8 0 0 1 218 705H512A8 8 0 0 1 528 705H600V660"/>
-  <path class="lk" d="M50 845H100"/>
-  <path class="lk" d="M50 992H260"/>
+  <path class="lk start" d="M960 190V290"/>
+  <path class="lk end" d="M50 992V290H252A8 8 0 0 1 268 290H782A8 8 0 0 1 798 290H1352V745H1340"/>
+  <path class="lk end" d="M50 400H100"/>
+  <path class="lk end" d="M50 645H70A8 8 0 0 1 86 645H100"/>
+  <path class="lk end" d="M50 705H70A8 8 0 0 1 86 705H202A8 8 0 0 1 218 705H512A8 8 0 0 1 528 705H600V660"/>
+  <path class="lk end" d="M50 845H100"/>
+  <path class="lk end" d="M50 992H260"/>
   <text class="ll" x="970" y="280">O1</text>
   <text class="ll" x="150" y="984">O1*</text>
 </g>
 <!-- links -->
-<g data-if="R1" class="f-oran"><path class="lk" d="M260 146V176"/><text class="ll" x="270" y="166">R1</text></g>
-<g data-if="A1" class="f-oran"><path class="lk" d="M260 236V380"/><text class="ll" x="272" y="256">A1</text><text x="272" y="273" style="font-size:12px;fill:#5a6775">policies · enrichment · models</text></g>
-<g data-if="Y1" class="f-oran"><path class="lk" d="M540 420H1100V375H1120"/><text class="ll" x="560" y="412">Y1</text></g>
-<g data-if="O2" class="f-oran"><path class="lk" d="M790 190V330"/><text class="ll" x="802" y="244">O2</text><text x="802" y="262" style="font-size:12px;fill:#5a6775">O2ims · O2dms</text></g>
+<g data-if="R1" class="f-oran"><path class="lk two" d="M260 146V176"/><text class="ll" x="270" y="166">R1</text></g>
+<g data-if="A1" class="f-oran"><path class="lk two" d="M260 236V380"/><text class="ll" x="272" y="256">A1</text><text x="272" y="273" style="font-size:12px;fill:#5a6775">policies · enrichment · models</text></g>
+<g data-if="Y1" class="f-oran"><path class="lk one" d="M540 420H1100V375H1120"/><text class="ll" x="560" y="412">Y1</text></g>
+<g data-if="O2" class="f-oran"><path class="lk two" d="M790 190V330"/><text class="ll" x="802" y="244">O2</text><text x="802" y="262" style="font-size:12px;fill:#5a6775">O2ims · O2dms</text></g>
 
 <g data-if="E2" class="f-e2">
-  <path class="lk" d="M180 500V590"/><path class="lk" d="M440 500V590"/>
-  <path class="lk" d="M100 480H78V825H100"/>
+  <path class="lk two" d="M180 500V590"/><path class="lk two" d="M440 500V590"/>
+  <path class="lk two" d="M100 480H78V825H100"/>
   <text class="ll" x="188" y="518">E2</text><text class="ll" x="448" y="518">E2</text><text class="ll" x="84" y="725">E2</text>
 </g>
 
-<g data-if="NG-C" class="f-gpp"><path class="lk" d="M290 590V530H432A8 8 0 0 1 448 530H1080V470H1120"/><text class="ll" x="1050" y="464" text-anchor="end">NG-C</text></g>
-<g data-if="NG-U" class="f-gpp"><path class="lk" d="M600 590V548H1095V510H1120"/><text class="ll" x="1050" y="504" text-anchor="end">NG-U</text></g>
-<g data-if="Xn-C" class="f-gpp"><path class="lk" d="M250 590V566H432A8 8 0 0 1 448 566H592A8 8 0 0 1 608 566H1100V605H1120"/><text class="ll" x="940" y="590">Xn-C</text></g>
-<g data-if="Xn-U" class="f-gpp"><path class="lk" d="M620 630H1120"/><text class="ll" x="940" y="622">Xn-U</text></g>
-<g data-if="X2" class="f-gpp"><path class="lk" d="M620 652H1080V745H1120"/><text class="ll" x="900" y="674">X2 (EN-DC)</text></g>
-<g data-if="E1" class="f-gpp"><path class="lk" d="M320 625H420"/><text class="ll" x="358" y="616">E1</text></g>
-<g data-if="F1-C" class="f-gpp"><path class="lk" d="M210 660V790"/><text class="ll" x="218" y="722">F1-C</text></g>
-<g data-if="F1-U" class="f-gpp"><path class="lk" d="M520 660V790"/><text class="ll" x="528" y="722">F1-U</text></g>
-<g data-if="OFH" class="f-oran"><path class="lk" d="M360 860V960"/><text class="ll" x="372" y="926">Open Fronthaul 7.2x</text><text x="372" y="944" style="font-size:12px;fill:#5a6775">CUS-plane · M-plane</text></g>
-<g data-if="Uu" class="f-gpp"><path class="lk" d="M360 1024V1090" stroke-dasharray="4 5"/><text class="ll" x="372" y="1062">Uu (air interface)</text></g>
+<g data-if="NG-C" class="f-gpp"><path class="lk two" d="M290 590V530H432A8 8 0 0 1 448 530H1080V470H1120"/><text class="ll" x="1050" y="464" text-anchor="end">NG-C</text></g>
+<g data-if="NG-U" class="f-gpp"><path class="lk two" d="M600 590V548H1095V510H1120"/><text class="ll" x="1050" y="504" text-anchor="end">NG-U</text></g>
+<g data-if="Xn-C" class="f-gpp"><path class="lk two" d="M250 590V566H432A8 8 0 0 1 448 566H592A8 8 0 0 1 608 566H1100V605H1120"/><text class="ll" x="940" y="590">Xn-C</text></g>
+<g data-if="Xn-U" class="f-gpp"><path class="lk two" d="M620 630H1120"/><text class="ll" x="940" y="622">Xn-U</text></g>
+<g data-if="X2" class="f-gpp"><path class="lk two" d="M620 652H1080V745H1120"/><text class="ll" x="900" y="674">X2 (EN-DC)</text></g>
+<g data-if="E1" class="f-gpp"><path class="lk two" d="M320 625H420"/><text class="ll" x="358" y="616">E1</text></g>
+<g data-if="F1-C" class="f-gpp"><path class="lk two" d="M210 660V790"/><text class="ll" x="218" y="722">F1-C</text></g>
+<g data-if="F1-U" class="f-gpp"><path class="lk two" d="M520 660V790"/><text class="ll" x="528" y="722">F1-U</text></g>
+<g data-if="OFH" class="f-oran"><path class="lk two" d="M360 860V960"/><text class="ll" x="372" y="926">Open Fronthaul 7.2x</text><text x="372" y="944" style="font-size:12px;fill:#5a6775">CUS-plane · M-plane</text></g>
+<g data-if="Uu" class="f-gpp"><path class="lk two" d="M360 1024V1090" stroke-dasharray="4 5"/><text class="ll" x="372" y="1062">Uu (air interface)</text></g>
 
 <!-- SMO internals -->
 <g class="n ric"><rect class="b" x="80" y="86" width="360" height="60" rx="7"/><text class="t" x="260" y="111" text-anchor="middle">rApps</text><text class="s" x="260" y="131" text-anchor="middle">energy saving · MRO · ML lifecycle</text></g>
@@ -102,15 +110,16 @@ text{font-family:Helvetica, Arial, sans-serif}
 <g data-if="E2N" class="e2n"><rect x="1268" y="717" width="64" height="18" rx="9"/><text x="1300" y="730" text-anchor="middle">E2 node</text></g>
 
 <g>
-<rect x="680" y="930" width="660" height="216" rx="10" fill="#ffffff" stroke="#d5dbe2"/>
+<rect x="680" y="930" width="660" height="246" rx="10" fill="#ffffff" stroke="#d5dbe2"/>
 <text x="700" y="958" style="font-size:14px;font-weight:bold;fill:#17212c">Legend</text>
-<line x1="700" y1="984" x2="750" y2="984" stroke="#b86200" stroke-width="2.6"/><text x="762" y="988" style="font-size:12.5px;fill:#17212c">E2: per-UE KPIs and RRC events (primary RLF data)</text>
-<line x1="700" y1="1010" x2="750" y2="1010" stroke="#bf332c" stroke-width="2.2" stroke-dasharray="7 4"/><text x="762" y="1014" style="font-size:12.5px;fill:#17212c">O1: PM, FM, configuration, traces (labels, cell counters)</text>
+<line x1="700" y1="984" x2="750" y2="984" stroke="#b86200" stroke-width="2.6"/><text x="762" y="988" style="font-size:12.5px;fill:#17212c">E2: per-UE KPIs and RRC events up, control down (primary RLF data)</text>
+<line x1="700" y1="1010" x2="750" y2="1010" stroke="#bf332c" stroke-width="2.2" stroke-dasharray="7 4"/><text x="762" y="1014" style="font-size:12.5px;fill:#17212c">O1: PM, FM, traces up, configuration down (labels, cell counters)</text>
 <line x1="700" y1="1036" x2="750" y2="1036" stroke="#5546c2" stroke-width="2.6"/><text x="762" y="1040" style="font-size:12.5px;fill:#17212c">Other O-RAN interfaces: A1, R1, Y1, O2, Open Fronthaul</text>
 <line x1="700" y1="1062" x2="750" y2="1062" stroke="#0d7468" stroke-width="2.6"/><text x="762" y="1066" style="font-size:12.5px;fill:#17212c">3GPP interfaces: E1, F1, NG, Xn, X2, Uu</text>
 <rect x="700" y="1080" width="50" height="18" rx="4" fill="none" stroke="#17212c" stroke-width="1.6" stroke-dasharray="10 5"/><text x="762" y="1094" style="font-size:12.5px;fill:#17212c">One gNB (3GPP base station)</text>
 <g class="e2n"><rect x="1010" y="1080" width="64" height="18" rx="9"/><text x="1042" y="1093" text-anchor="middle">E2 node</text></g><text x="1084" y="1094" style="font-size:12.5px;fill:#17212c">terminates E2</text>
 <rect x="700" y="1110" width="50" height="20" rx="4" fill="#f7f8fa" stroke="#0d7468" stroke-width="1.4" stroke-dasharray="8 5"/><text x="762" y="1125" style="font-size:12.5px;fill:#17212c">O-Cloud; thin dotted boxes are its sites</text>
 <text x="1010" y="1125" style="font-size:12.5px;fill:#5a6775">Bridges: lines cross, no link</text>
+<line x1="700" y1="1152" x2="750" y2="1152" stroke="#17212c" stroke-width="2.6" marker-start="url(#m-k)" marker-end="url(#m-k)"/><text x="762" y="1156" style="font-size:12.5px;fill:#17212c">Arrowheads: two heads = traffic in both directions; one head (Y1) = one way</text>
 </g>
 </svg>

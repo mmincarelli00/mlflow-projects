@@ -36,7 +36,7 @@ The experiment predicts radio link failures (RLF) from per-UE KPIs. In a real O-
 
 ![O-RAN logical architecture and interfaces](docs/oran-architecture.png)
 
-*Logical view based on the O-RAN Alliance architecture, for NR standalone plus EN-DC. Amber (E2) and red dashed (O1) are the two interfaces that carry the experiment's data; purple lines are the other O-RAN interfaces and teal lines are 3GPP interfaces. The black dashed outline is one gNB, the amber tags mark E2 nodes, and the O-Cloud spans an edge site and a far-edge site. Where the RLF application itself sits is shown in a [second diagram](#rlf-application-diagram). A vector version is in [`docs/oran-architecture.svg`](docs/oran-architecture.svg).*
+*Logical view based on the O-RAN Alliance architecture, for NR standalone plus EN-DC. Amber (E2) and red dashed (O1) are the two interfaces that carry the experiment's data; purple lines are the other O-RAN interfaces and teal lines are 3GPP interfaces. Arrowheads show the direction of flow: two heads where traffic runs both ways (for example E2 carries KPM reports up to the RIC and RC control down, and O1 carries PM, FM and traces up to the SMO and configuration down), one head for Y1, which exposes analytics to its consumers. The black dashed outline is one gNB, the amber tags mark E2 nodes, and the O-Cloud spans an edge site and a far-edge site. Where the RLF application itself sits is shown in a [second diagram](#rlf-application-diagram). A vector version is in [`docs/oran-architecture.svg`](docs/oran-architecture.svg).*
 
 ### O-RAN in brief
 
