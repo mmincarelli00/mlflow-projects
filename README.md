@@ -602,6 +602,51 @@ Every family is trained and scored on the same time-ordered splits, so differenc
 - **1 final model** trained on all the data and logged to MLflow. It has no test score.
 - Inside training, the GRU holds out the last 15% of its training period to choose the best epoch, and scikit-learn's HistGradientBoosting uses its own internal early-stopping validation when the data is large.
 
+#### What a fold is
+
+A **fold** is one train/test split of the dataset: a set of rows used to fit a model (the training set) and a different set used to score it (the test set). Evaluating on several folds, instead of a single split, gives several independent scores, so the result does not hinge on one lucky or unlucky test period. In `RLF_train.py` each fold gets its own freshly created model, trained from scratch on that fold's training rows only, and scored on that fold's test rows. The metrics of the folds are then averaged (the standard deviation across folds shows how stable they are).
+
+Folds here are **time-ordered**, not random. A random K-fold split would put neighboring seconds of the same degradation episode in both training and test sets, so the model would be tested on data nearly identical to what it trained on, and the score would be far too optimistic. In a live system the model is trained on the past and must predict the future, and time-ordered folds reproduce exactly that.
+
+#### How the 4 rolling-origin time folds work
+
+"Rolling origin" means the point in time that separates past from future (the **origin**) moves forward from fold to fold. The training set is everything before the origin (so it grows from fold to fold, an expanding window), and the test set is a block of time right after the origin. All UEs and cells appear on both sides of the split, only time is split; generalization to unseen cells is tested separately by the cell hold-out.
+
+The code (`time_splits` in `RLF_train.py`) works like this, with `span` the length of the data in time:
+
+- The first origin is at 50% of the time range, and each of the 4 folds moves it forward by one step of 12.5% (`(1 - 0.5) / 4`): 50%, 62.5%, 75%, 87.5%.
+- Training rows: all rows with time before the origin.
+- Test rows: a block of 12.5% of the time range that starts `horizon` seconds after the origin.
+- The `horizon` seconds between them are the **gap (embargo)**. The label of a row at second *t* is "an RLF occurs in (*t*, *t* + horizon]". Without a gap, the labels of the last training rows would look into the test period, and the model would be trained on information about test-period failures. Features look backward only, so they need no gap.
+
+**Example.** Default synthetic run: 60 UEs, 3,600 s (time 0 to 3,599), horizon 30 s, so one row per UE per second and 12.5% is about 450 s.
+
+| Fold | Origin | Training seconds (all 60 UEs) | Gap | Test seconds (all 60 UEs) |
+| --- | --- | --- | --- | --- |
+| 1 | 50% (about 1,800 s) | 0 to 1,799 (108,000 rows) | 1,800 to 1,829 | 1,830 to 2,279 (27,000 rows) |
+| 2 | 62.5% (about 2,250 s) | 0 to 2,249 (135,000 rows) | 2,250 to 2,279 | 2,280 to 2,729 (27,000 rows) |
+| 3 | 75% (about 2,700 s) | 0 to 2,699 (162,000 rows) | 2,700 to 2,729 | 2,730 to 3,179 (27,000 rows) |
+| 4 | 87.5% (about 3,150 s) | 0 to 3,149 (189,000 rows) | 3,150 to 3,179 | 3,180 to 3,599 (25,200 rows) |
+
+On a timeline (T = training, g = gap, S = scored test block, . = not used in that fold; one character is 60 s, so the gap shows as a single g):
+
+```text
+time (s)   0                             1800           2700           3600
+Fold 1     TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTgSSSSSSS......................
+Fold 2     TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTgSSSSSSS..............
+Fold 3     TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTgSSSSSSS.......
+Fold 4     TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTgSSSSSSS
+```
+
+What to notice in the example:
+- **The test blocks do not overlap.** Together they cover the second half of the data (from 1,830 s to the end) once each, so every second of that half is tested exactly once.
+- **The training set grows.** Fold 1 trains on 108,000 rows and fold 4 on 189,000, so later folds usually have a little more data to learn from.
+- **The last block is shorter.** Fold 4's block would end beyond the data (3,629 s), so it is cut at the last second (3,599 s) and has 420 s instead of 450 s.
+- **The first half is never tested.** It is only ever training data, because a model needs some history before it can predict anything.
+- **A positive row near the end of training is safe.** A row at second 1,799 in fold 1 is labelled by RLFs in 1,800 to 1,829, all inside the gap, so none of the test period's failures leak into training.
+
+Each of the 5 models (z-score, Isolation Forest, HistGradientBoosting, XGBoost, GRU) is fit and scored on these same 4 folds. The reported metrics (`pr_auc`, recall at the false-alarm rate, event recall, lead time, alert episodes, inference time) are the average of the 4 test blocks, so differences between models come from the models and not from different data. Folds from a single dataset are still not independent samples of the world: they come from one data seed, which is why the README recommends repeating the runs with several data and model seeds.
+
 **Alert threshold:** each model outputs a risk score per UE-second. In every test fold the threshold is set at the 99th percentile of the scores of normal rows (`1 − TARGET_FPR`, with `TARGET_FPR = 0.01`), so 1% of normal seconds raise an alert. This gives every model the same false-alarm budget. Because it is computed from the test labels, a live system would need a threshold fixed in advance.
 
 **Metrics**
