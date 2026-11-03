@@ -57,11 +57,11 @@ text{font-family:Helvetica, Arial, sans-serif}
   <path class="lk" d="M1240 192V215H968A8 8 0 0 0 952 215H798A8 8 0 0 0 782 215H442" marker-start="url(#ah)" marker-end="url(#ah)"/>
   <path class="lk" d="M540 395H760V298A8 8 0 0 0 760 282V232H782A8 8 0 0 1 798 232H952A8 8 0 0 1 968 232H1290V192" marker-end="url(#ah)"/>
   <text class="ll" x="1090" y="250">E2 records export</text>
-  <text class="ll" x="482" y="208">training data · models</text>
+  <text class="ll" x="494" y="208">training data · models</text>
 </g>
 <!-- links -->
 <g data-if="R1" class="f-oran"><path class="lk two" d="M260 146V176"/><text class="ll" x="270" y="166">R1</text></g>
-<g data-if="A1" class="f-oran"><path class="lk two" d="M260 236V380"/><text class="ll" x="272" y="256">A1</text><text x="272" y="273" style="font-size:12px;fill:#5a6775">policies · enrichment · models</text></g>
+<g data-if="A1" class="f-oran"><path class="lk two" d="M260 236V380"/><text class="ll" x="270" y="278">A1</text><text x="296" y="278" style="font-size:12px;fill:#5a6775">policies · enrichment · models</text></g>
 <g data-if="Y1" class="f-oran"><path class="lk one" d="M540 420H1100V375H1120"/><text class="ll" x="560" y="412">Y1</text></g>
 <g data-if="O2" class="f-oran"><path class="lk two" d="M790 190V330"/><text class="ll" x="802" y="256">O2</text><text x="802" y="273" style="font-size:12px;fill:#5a6775">O2ims · O2dms</text></g>
 
@@ -82,6 +82,8 @@ text{font-family:Helvetica, Arial, sans-serif}
 <g data-if="OFH" class="f-oran"><path class="lk two" d="M360 860V960"/><text class="ll" x="372" y="926">Open Fronthaul 7.2x</text><text x="372" y="944" style="font-size:12px;fill:#5a6775">CUS-plane · M-plane</text></g>
 <g data-if="Uu" class="f-gpp"><path class="lk two" d="M360 1024V1090" stroke-dasharray="4 5"/><text class="ll" x="372" y="1062">Uu (air interface)</text></g>
 
+<g id="nrtric"><rect x="66" y="80" width="386" height="164" rx="10" fill="none" style="stroke:#5546c2;stroke-width:1.3;stroke-dasharray:6 4"/>
+<text x="440" y="167" text-anchor="end" style="font-size:13px;font-weight:600;fill:#5546c2">Non-RT RIC</text></g>
 <!-- SMO internals -->
 <g class="n ric"><rect class="b" x="80" y="86" width="360" height="60" rx="7"/><text class="t" x="260" y="104" text-anchor="middle">rApps</text>
   <rect x="92" y="112" width="118" height="26" rx="5" style="fill:#fbe8f1;stroke:#b02a6b;stroke-width:1.5"/><text x="151" y="129" text-anchor="middle" style="font-size:12px;font-weight:600;fill:#b02a6b">RLF trainer</text>
@@ -124,14 +126,14 @@ text{font-family:Helvetica, Arial, sans-serif}
 <g data-if="APP" class="dir">
   <path d="M166 578V536" marker-end="url(#ah)"/>
   <path d="M196 528V576" marker-end="url(#ah)"/>
-  <path d="M246 242V282" marker-end="url(#ah)"/>
+  <path d="M244 250V286" marker-end="url(#ah)"/>
   <path d="M642 433H700" marker-end="url(#ah)"/>
   <path d="M978 286V246" marker-end="url(#ah)"/>
 </g>
 <g data-if="APP" class="mk"><rect x="1117" y="115" width="26" height="18" rx="9"/><text x="1130" y="128" text-anchor="middle">T1</text></g>
 <g data-if="APP" class="mk"><rect x="747" y="311" width="26" height="18" rx="9"/><text x="760" y="324" text-anchor="middle">T1</text></g>
-<g data-if="APP" class="mk"><rect x="449" y="194" width="26" height="18" rx="9"/><text x="462" y="207" text-anchor="middle">T2</text></g>
-<g data-if="APP" class="mk"><rect x="213" y="253" width="26" height="18" rx="9"/><text x="226" y="266" text-anchor="middle">T3</text></g>
+<g data-if="APP" class="mk"><rect x="461" y="194" width="26" height="18" rx="9"/><text x="474" y="207" text-anchor="middle">T2</text></g>
+<g data-if="APP" class="mk"><rect x="210" y="262" width="26" height="18" rx="9"/><text x="223" y="275" text-anchor="middle">T3</text></g>
 <g data-if="APP" class="mk"><rect x="997" y="253" width="26" height="18" rx="9"/><text x="1010" y="266" text-anchor="middle">T4</text></g>
 <g data-if="APP" class="mki"><rect x="132" y="511" width="26" height="18" rx="9"/><text x="145" y="524" text-anchor="middle">I1</text></g>
 <g data-if="APP" class="mki"><rect x="102" y="422" width="26" height="18" rx="9"/><text x="115" y="435" text-anchor="middle">I2</text></g>
