@@ -314,23 +314,42 @@ Each file does one job in a chain: generate data, build features and labels, the
 
 ### `RLF_synthetic_data.py`: a stand-in for real KPM data
 
-**Scope:** `generate_dataset(n_ues=60, n_seconds=3600, n_cells=12, seed=7, episode_rate=1/400, sudden_rlf_rate=1/6000)` returns one row per UE per second (216,000 rows in the default run).
+**Scope:** `generate_dataset(n_ues=60, n_seconds=3600, n_cells=12, seed=7, episode_rate=1/400, sudden_rlf_rate=1/6000)` returns one row per UE per second (216,000 rows in the default run) and **22 columns**.
 
-**Columns:** `ue_id`, `cell_id`, `t`, `rsrp`, `rsrq`, `sinr`, `neighbor_rsrp`, `ta`, `phr`, `ul_sinr`, `cqi`, `dl_bler`, `harq_retx`, `a3_events`, `ho_cmd`, `prb_util`, `connected_ues`, `a3_offset`, `hysteresis`, `ttt_ms`, `hour_of_day`, and the failure flag `rlf`.
+**Columns:**
+
+| Group | Columns | Count |
+| --- | --- | --- |
+| Identifiers and time | `ue_id`, `cell_id`, `t` | 3 |
+| Radio signal | `rsrp`, `rsrq`, `sinr`, `neighbor_rsrp` | 4 |
+| Link and uplink | `ta`, `phr`, `ul_sinr`, `cqi` | 4 |
+| Link quality | `dl_bler`, `harq_retx` | 2 |
+| Handover events | `a3_events`, `ho_cmd` | 2 |
+| Cell load | `prb_util`, `connected_ues` | 2 |
+| Handover configuration | `a3_offset`, `hysteresis`, `ttt_ms` | 3 |
+| Time of day | `hour_of_day` | 1 |
+| Failure flag | `rlf` | 1 |
+
+The 17 raw inputs used in `RLF_features.py` are these 22 columns minus five that are never inputs (`ue_id`, `cell_id`, `t`, `ho_cmd` and `rlf`). The `rlf` column becomes the `label` there, giving 105 model inputs plus the label.
 
 **How it creates failures:**
 
-- Slowly wandering KPI signals form the normal background (an AR(1) helper, `_ar1`).
-- Degradation episodes ramp the serving signal down over 10 to 45 s by 18 to 32 dB.
-- Each episode ends in an RLF (55%), a handover (25%) or a recovery (20%).
-- About 11% of RLFs are sudden, with no warning, so no model can predict them.
+Slowly wandering KPI signals form the normal background (an AR(1) helper, `_ar1`). On top of that, two per-second probabilities, tested independently for every UE, create the failures:
+
+| Parameter | Default | What it controls | Effect |
+| --- | --- | --- | --- |
+| `episode_rate` | 1/400 | Chance per second, while no episode is running, that a **degradation episode** starts. Gaps between episodes are random, averaging about 400 s | The episode lasts 10 to 45 s and ramps the serving signal down by 18 to 32 dB: this is the warning sign the models learn. It ends in an RLF (55%), a handover command (25%) or a recovery (20%), and a 5 s pause follows before another can start |
+| `sudden_rlf_rate` | 1/6000 | Chance per second, outside episodes, of an RLF **with no degradation before it** | The KPIs stay normal, so no model can predict these failures. This gives about 0.6 sudden RLFs per UE-hour |
+
+An episode cycle is about 400 s of waiting plus about 27 s of episode plus the 5 s pause, roughly 430 s, so about 8 episodes per UE-hour, of which about 55% end in an RLF. With the sudden failures, the default run gives about 5 RLFs per UE-hour (325 events, 5.4 per UE-hour measured), far more than a real network. About 11% of the RLFs are sudden, which caps event recall near 89%.
+
+For a more realistic dataset with rarer failures, lower both rates (for example `episode_rate=1/4000`), and expect a much lower PR-AUC and the need for more UEs or a longer duration to keep enough events to train on.
 
 **Known simplifications:**
 
 - `ttt_ms`, `hour_of_day` (constant 8 in the default run), `prb_util` and `connected_ues` carry no failure signal.
 - Recovery is abrupt.
 - There is no spatial structure.
-- The default run has about 5.4 RLFs per UE-hour, far more than a real network.
 
 #### Collecting the same dataset from a real system
 
