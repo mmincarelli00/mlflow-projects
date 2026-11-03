@@ -514,7 +514,7 @@ The network does not see an RLF directly, because the UE declares it (for exampl
 - UE-level traces are personal data in most jurisdictions: pseudonymize and agree retention with the operator.
 - Models trained on one vendor or cell type may need retraining elsewhere; the cell hold-out score is the early warning.
 
-**Closing the loop:** a model trained and tracked in the SMO (MLflow) can be deployed to the near-RT RIC as an xApp, or to the non-RT RIC as an rApp, with policies and models delivered over **A1** and mitigation actions (for example a handover or parameter change) sent back to the RAN over **E2-RC**.
+**Closing the loop:** a model trained and tracked in the SMO (MLflow) is deployed to the near-RT RIC as an **xApp**, which scores each UE every second, because that is where the per-UE E2 data arrives and where a 15 to 30 s warning can still be acted on. A trainer **rApp** in the SMO runs the training and retraining pipeline and delivers the model and the alert policy to the xApp over **A1**; the xApp is deployed through the SMO over **O2**. Mitigation actions (for example a handover or parameter change) are sent back to the RAN by the xApp over **E2-RC**. Scoring in an rApp is possible only for slower, cell-level uses (see [Deployment options](#deployment-options)) and would need a different model from the per-UE one in this repository.
 
 *This mapping comes from general 3GPP and O-RAN knowledge. Which interfaces, service models and per-UE metrics are exposed varies by vendor and release, and it has not been checked against a specific vendor's data model.*
 
@@ -828,7 +828,7 @@ This section sketches how the experiment could become a **predictive service ass
 | Option | Where it runs | Latency | Best for | Trade-off |
 | --- | --- | --- | --- | --- |
 | **xApp** | Near-RT RIC | 10 ms to 1 s loop | Real-time scoring and closed-loop actions over E2 | Needs a near-RT RIC and E2 nodes that expose per-UE KPIs |
-| **rApp / SMO analytics service** | Non-RT RIC or SMO | Seconds or more | Cell-level and cluster-level scoring, dashboards, advisory alerts | Coarser data, no sub-second control |
+| **rApp / SMO analytics service** | Non-RT RIC or SMO | Seconds or more | Cell-level and cluster-level scoring, dashboards, advisory alerts; also hosts the training pipeline | Coarser data, no sub-second control; a cell-level scorer would be a new model, not the per-UE one in this repository |
 | **External service on O1 and trace data** | Operator cloud or OSS | Seconds to minutes | Fastest to deploy on a commercial network, advisory use | Depends on the vendor's export format and rate |
 
 A pragmatic path is to start as an **advisory service on O1 and trace data**, then move the model into an **xApp** once per-UE E2 reporting is available and the alerts are trusted.
