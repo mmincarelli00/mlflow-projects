@@ -341,30 +341,110 @@ Each file does one job in a chain: generate data, build features and labels, the
 
 **Columns (22):**
 
-| # | Group | Column | Meaning | Unit and typical value in the generator |
-| --- | --- | --- | --- | --- |
-| 1 | Identifiers and time | `ue_id` | Identifier of the simulated UE | Integer, 0 to `n_ues - 1` (pseudonymous in real data) |
-| 2 | | `cell_id` | Serving cell of the UE | Integer, 0 to `n_cells - 1`; fixed for each UE in this generator |
-| 3 | | `t` | Time of the row | Second index, 0 to `n_seconds - 1` |
-| 4 | Radio signal | `rsrp` | RSRP of the serving cell | dBm; about -86, wandering slowly, falls by 18 to 32 dB during a degradation episode |
-| 5 | | `rsrq` | RSRQ of the serving cell | dB; about -10.5, follows `rsrp` |
-| 6 | | `sinr` | Downlink SINR | dB; about 18, follows `rsrp` |
-| 7 | | `neighbor_rsrp` | RSRP of the best neighbor cell | dBm; about -96, rises during an episode so the gap to the serving cell closes |
-| 8 | Link and uplink | `ta` | Timing advance of the UE | Index steps; about 20, drifts slowly and grows during an episode |
-| 9 | | `phr` | Power headroom of the UE | dB; about 14, falls as the link degrades |
-| 10 | | `ul_sinr` | Uplink SINR | dB; about `sinr` minus 3 plus noise |
-| 11 | | `cqi` | Channel quality indicator reported by the UE | Integer 1 to 15; derived from `sinr` |
-| 12 | Link quality | `dl_bler` | Downlink block error rate | Fraction 0 to 1; about 0.04, rises with degradation |
-| 13 | | `harq_retx` | HARQ retransmission rate (share of transmissions that need a retransmission) | Fraction 0 to 1; about 0.07, rises with degradation |
-| 14 | Handover events | `a3_events` | Number of A3 events (neighbor better than serving by the offset) in that second | Count, usually 0; more likely when the neighbor exceeds the serving cell by more than the A3 offset |
-| 15 | | `ho_cmd` | 1 in the second a handover command is issued, otherwise 0 | 0 or 1; set at the end of an episode that ends in a handover (not a model input) |
-| 16 | Cell load | `prb_util` | PRB utilization of the serving cell (cell load) | Fraction 0.02 to 0.99; per-cell level with a slow daily-like swing |
-| 17 | | `connected_ues` | Number of UEs connected to the serving cell | Count; about 5 plus 60 times the load |
-| 18 | Handover configuration | `a3_offset` | Offset the neighbor must exceed for an A3 event | dB; 2, 3 or 4, fixed per cell |
-| 19 | | `hysteresis` | Hysteresis added to the A3 condition to avoid ping-pong | dB; 1 or 2, fixed per cell |
-| 20 | | `ttt_ms` | Time-to-trigger of the A3 event | Milliseconds; 160, 320 or 480, fixed per cell |
-| 21 | Time of day | `hour_of_day` | Hour of day of the row | Integer 0 to 23; the clock starts at 08:00, so it is constant 8 in a one-hour run |
-| 22 | Failure flag | `rlf` | 1 in the second a radio link failure occurs, otherwise 0 | 0 or 1; set at the end of an episode that ends in an RLF, or at a sudden RLF; the label is built from it |
+<table>
+<thead>
+<tr><th>#</th><th>Group</th><th>Column</th><th>Meaning</th><th>Unit and typical value in the generator</th></tr>
+</thead>
+<tbody>
+<tr>
+<td align="center">1</td>
+<td rowspan="3" align="center" valign="middle"><b>Identifiers and time</b></td>
+<td><code>ue_id</code></td><td>Identifier of the simulated UE</td><td>Integer, 0 to <code>n_ues - 1</code> (pseudonymous in real data)</td>
+</tr>
+<tr>
+<td align="center">2</td>
+<td><code>cell_id</code></td><td>Serving cell of the UE</td><td>Integer, 0 to <code>n_cells - 1</code>; fixed for each UE in this generator</td>
+</tr>
+<tr>
+<td align="center">3</td>
+<td><code>t</code></td><td>Time of the row</td><td>Second index, 0 to <code>n_seconds - 1</code></td>
+</tr>
+<tr>
+<td align="center">4</td>
+<td rowspan="4" align="center" valign="middle"><b>Radio signal</b></td>
+<td><code>rsrp</code></td><td>RSRP of the serving cell</td><td>dBm; about -86, wandering slowly, falls by 18 to 32 dB during a degradation episode</td>
+</tr>
+<tr>
+<td align="center">5</td>
+<td><code>rsrq</code></td><td>RSRQ of the serving cell</td><td>dB; about -10.5, follows <code>rsrp</code></td>
+</tr>
+<tr>
+<td align="center">6</td>
+<td><code>sinr</code></td><td>Downlink SINR</td><td>dB; about 18, follows <code>rsrp</code></td>
+</tr>
+<tr>
+<td align="center">7</td>
+<td><code>neighbor_rsrp</code></td><td>RSRP of the best neighbor cell</td><td>dBm; about -96, rises during an episode so the gap to the serving cell closes</td>
+</tr>
+<tr>
+<td align="center">8</td>
+<td rowspan="4" align="center" valign="middle"><b>Link and uplink</b></td>
+<td><code>ta</code></td><td>Timing advance of the UE</td><td>Index steps; about 20, drifts slowly and grows during an episode</td>
+</tr>
+<tr>
+<td align="center">9</td>
+<td><code>phr</code></td><td>Power headroom of the UE</td><td>dB; about 14, falls as the link degrades</td>
+</tr>
+<tr>
+<td align="center">10</td>
+<td><code>ul_sinr</code></td><td>Uplink SINR</td><td>dB; about <code>sinr</code> minus 3 plus noise</td>
+</tr>
+<tr>
+<td align="center">11</td>
+<td><code>cqi</code></td><td>Channel quality indicator reported by the UE</td><td>Integer 1 to 15; derived from <code>sinr</code></td>
+</tr>
+<tr>
+<td align="center">12</td>
+<td rowspan="2" align="center" valign="middle"><b>Link quality</b></td>
+<td><code>dl_bler</code></td><td>Downlink block error rate</td><td>Fraction 0 to 1; about 0.04, rises with degradation</td>
+</tr>
+<tr>
+<td align="center">13</td>
+<td><code>harq_retx</code></td><td>HARQ retransmission rate (share of transmissions that need a retransmission)</td><td>Fraction 0 to 1; about 0.07, rises with degradation</td>
+</tr>
+<tr>
+<td align="center">14</td>
+<td rowspan="2" align="center" valign="middle"><b>Handover events</b></td>
+<td><code>a3_events</code></td><td>Number of A3 events (neighbor better than serving by the offset) in that second</td><td>Count, usually 0; more likely when the neighbor exceeds the serving cell by more than the A3 offset</td>
+</tr>
+<tr>
+<td align="center">15</td>
+<td><code>ho_cmd</code></td><td>1 in the second a handover command is issued, otherwise 0</td><td>0 or 1; set at the end of an episode that ends in a handover (not a model input)</td>
+</tr>
+<tr>
+<td align="center">16</td>
+<td rowspan="2" align="center" valign="middle"><b>Cell load</b></td>
+<td><code>prb_util</code></td><td>PRB utilization of the serving cell (cell load)</td><td>Fraction 0.02 to 0.99; per-cell level with a slow daily-like swing</td>
+</tr>
+<tr>
+<td align="center">17</td>
+<td><code>connected_ues</code></td><td>Number of UEs connected to the serving cell</td><td>Count; about 5 plus 60 times the load</td>
+</tr>
+<tr>
+<td align="center">18</td>
+<td rowspan="3" align="center" valign="middle"><b>Handover configuration</b></td>
+<td><code>a3_offset</code></td><td>Offset the neighbor must exceed for an A3 event</td><td>dB; 2, 3 or 4, fixed per cell</td>
+</tr>
+<tr>
+<td align="center">19</td>
+<td><code>hysteresis</code></td><td>Hysteresis added to the A3 condition to avoid ping-pong</td><td>dB; 1 or 2, fixed per cell</td>
+</tr>
+<tr>
+<td align="center">20</td>
+<td><code>ttt_ms</code></td><td>Time-to-trigger of the A3 event</td><td>Milliseconds; 160, 320 or 480, fixed per cell</td>
+</tr>
+<tr>
+<td align="center">21</td>
+<td rowspan="1" align="center" valign="middle"><b>Time of day</b></td>
+<td><code>hour_of_day</code></td><td>Hour of day of the row</td><td>Integer 0 to 23; the clock starts at 08:00, so it is constant 8 in a one-hour run</td>
+</tr>
+<tr>
+<td align="center">22</td>
+<td rowspan="1" align="center" valign="middle"><b>Failure flag</b></td>
+<td><code>rlf</code></td><td>1 in the second a radio link failure occurs, otherwise 0</td><td>0 or 1; set at the end of an episode that ends in an RLF, or at a sudden RLF; the label is built from it</td>
+</tr>
+</tbody>
+</table>
 
 The 17 raw inputs used in `RLF_features.py` are these 22 columns minus five that are never inputs (`ue_id`, `cell_id`, `t`, `ho_cmd` and `rlf`). The `rlf` column becomes the `label` there, giving 105 model inputs plus the label.
 
