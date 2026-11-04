@@ -667,23 +667,29 @@ For each test fold and each model:
 3. **Flag** every test row with a score above the threshold as an alert. By construction, **1%** of the normal rows are above it.
 4. **Measure** how many failures the alerts catch, with `recall_at_1pct_fpr`, `event_recall`, `median_lead_s` and `alert_episodes_per_ue_hour`.
 
-A normal UE-second is a row whose label is 0, that is, a UE-second for which no RLF happens to that same UE in the next horizon seconds. “Normal” here means “no failure ahead”, and not “the radio link looks healthy”.
+A **normal UE-second** is a row whose **label is 0**, that is, a UE-second for which no RLF happens to that same UE in the next `horizon` seconds. "Normal" here means "**no failure ahead**", and not "the radio link looks healthy".
 
-The label of the row at second t is 1 if an RLF occurs in (t, t + horizon], as defined in make_labels in RLF_features.py. Every other row is normal and has label 0.
+The label of the row at second *t* is 1 if an RLF occurs in (*t*, *t* + `horizon`], as defined in `make_labels` in `RLF_features.py`. Every other row is normal and has label 0.
 
-What counts as normal
+**What counts as normal**
 
-Healthy seconds: the UE has a good signal and nothing happens. This is most of the data.
-Degradation episodes that do not end in an RLF: the 20% that recover and the 25% that end in a handover. The signal is dropping but no failure follows, so these rows are label 0.
-The early part of an episode that does end in an RLF: a row is positive only within horizon seconds of the failure. With a 5 s horizon, the first seconds of a 10 to 45 s ramp are still normal. With a 30 s horizon, only a short ramp’s first seconds or none are.
-The failure second itself: a row at the RLF second is not labelled positive, because the window starts after t, unless another RLF follows within the horizon. In the synthetic data the UE keeps producing rows after an RLF, so those rows are normal too.
-Sudden RLFs: the seconds before one look healthy, but they are within horizon of the failure, so they are positive. The model cannot recognize them, which is why event recall is capped.
+- **Healthy seconds:** the UE has a good signal and nothing happens. This is most of the data.
+- **Degradation episodes that do not end in an RLF:** the 20% that recover and the 25% that end in a handover. The signal is dropping but no failure follows, so these rows are label 0.
+- **The early part of an episode that does end in an RLF:** a row is positive only within horizon seconds of the failure. With a 5 s horizon, the first seconds of a 10 to 45 s ramp are still normal. With a 30 s horizon, only a short ramp’s first seconds or none are.
+- **The failure second itself:** a row at the RLF second is not labelled positive, because the window starts after t, unless another RLF follows within the horizon. In the synthetic data the UE keeps producing rows after an RLF, so those rows are normal too.
+- **Sudden RLFs** (these rows are positive, not normal): the seconds before one look healthy, but they are within horizon of the failure, so they are positive. The model cannot recognize them, which is why event recall is capped.
 
-Why this matters for TARGET_FPR
-The alert threshold is the 99th percentile of the scores of exactly these normal rows. So “false alarm” means an alert on a row with no RLF in the next horizon seconds. A model that correctly warns about a degradation that happens to recover is counted as having raised a false alarm. This makes the false-alarm figures somewhat pessimistic, because some alerts during a degradation episode may be operationally useful even though no RLF followed.
+**Why this matters for `TARGET_FPR`**
 
-Rough proportions
-In the default run with a 30 s horizon, 4.488% of the rows are positive, so about 95.5% are normal. With a 5 s horizon, 0.752% are positive and about 99.2% are normal.
+- The alert threshold is the **99th percentile** of the scores of exactly these normal rows.
+- A **false alarm** means an alert on a row with no RLF in the next `horizon` seconds.
+- A model that correctly warns about a degradation that happens to recover is **counted as having raised a false alarm**.
+- This makes the false-alarm figures somewhat **pessimistic**, because some alerts during a degradation episode may be operationally useful even though no RLF followed.
+
+**Rough proportions** (default run)
+
+- **30 s horizon:** 4.488% of the rows are positive, so about **95.5%** are normal.
+- **5 s horizon:** 0.752% are positive, so about **99.2%** are normal.
 
 **Metrics**
 
