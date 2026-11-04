@@ -1,0 +1,197 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 820" font-family="Helvetica, Arial, sans-serif">
+<defs>
+<marker id="ar" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" refX="12" refY="7" orient="auto"><path d="M0,1 L13,7 L0,13 z" fill="#374151"/></marker>
+<marker id="ar2" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" refX="12" refY="7" orient="auto"><path d="M0,1 L13,7 L0,13 z" fill="#6366f1"/></marker></defs><rect width="1400" height="820" fill="#ffffff"/>
+<text x="700" y="40" font-size="26" font-weight="700" fill="#1f2937" text-anchor="middle">XGBoost: how it learns</text>
+<text x="40" y="66" font-size="17" font-weight="400" fill="#4b5563" text-anchor="start">Gradient boosting learning loop: many small trees, each correcting the errors of the previous ones</text>
+<rect x="40" y="130" width="236" height="120" rx="10" fill="#eef2ff" stroke="#6366f1" stroke-width="2"/>
+<text x="54" y="158" font-size="17" font-weight="700" fill="#1f2937" text-anchor="start">1. Start</text>
+<text x="54" y="182" font-size="14" font-weight="400" fill="#1f2937" text-anchor="start">Constant starting score F0,</text>
+<text x="54" y="202" font-size="14" font-weight="400" fill="#1f2937" text-anchor="start">the same for every row, set</text>
+<text x="54" y="222" font-size="14" font-weight="400" fill="#1f2937" text-anchor="start">from the class balance of the</text>
+<text x="54" y="242" font-size="14" font-weight="400" fill="#1f2937" text-anchor="start">training data</text>
+<line x1="279" y1="190.0" x2="307" y2="190.0" stroke="#374151" stroke-width="2.5" marker-end="url(#ar)"/>
+<rect x="311" y="130" width="236" height="120" rx="10" fill="#eef2ff" stroke="#6366f1" stroke-width="2"/>
+<text x="325" y="158" font-size="17" font-weight="700" fill="#1f2937" text-anchor="start">2. Errors</text>
+<text x="325" y="182" font-size="14" font-weight="400" fill="#1f2937" text-anchor="start">For each row, p - y, where p =</text>
+<text x="325" y="202" font-size="14" font-weight="400" fill="#1f2937" text-anchor="start">sigmoid(score) and y = label</text>
+<text x="325" y="222" font-size="14" font-weight="400" fill="#1f2937" text-anchor="start">(0 or 1)</text>
+<line x1="550" y1="190.0" x2="578" y2="190.0" stroke="#374151" stroke-width="2.5" marker-end="url(#ar)"/>
+<rect x="582" y="130" width="236" height="120" rx="10" fill="#eef2ff" stroke="#6366f1" stroke-width="2"/>
+<text x="596" y="158" font-size="17" font-weight="700" fill="#1f2937" text-anchor="start">3. New tree</text>
+<text x="596" y="182" font-size="14" font-weight="400" fill="#1f2937" text-anchor="start">Fit a small tree to these</text>
+<text x="596" y="202" font-size="14" font-weight="400" fill="#1f2937" text-anchor="start">errors, on a random 80% of</text>
+<text x="596" y="222" font-size="14" font-weight="400" fill="#1f2937" text-anchor="start">rows and columns</text>
+<line x1="821" y1="190.0" x2="849" y2="190.0" stroke="#374151" stroke-width="2.5" marker-end="url(#ar)"/>
+<rect x="853" y="130" width="236" height="120" rx="10" fill="#eef2ff" stroke="#6366f1" stroke-width="2"/>
+<text x="867" y="158" font-size="17" font-weight="700" fill="#1f2937" text-anchor="start">4. Update</text>
+<text x="867" y="182" font-size="14" font-weight="400" fill="#1f2937" text-anchor="start">score = score + 0.05 x tree</text>
+<text x="867" y="202" font-size="14" font-weight="400" fill="#1f2937" text-anchor="start">output (learning_rate = 0.05)</text>
+<line x1="1092" y1="190.0" x2="1120" y2="190.0" stroke="#374151" stroke-width="2.5" marker-end="url(#ar)"/>
+<rect x="1124" y="130" width="236" height="120" rx="10" fill="#ecfdf5" stroke="#10b981" stroke-width="2"/>
+<text x="1138" y="158" font-size="17" font-weight="700" fill="#1f2937" text-anchor="start">5. Result</text>
+<text x="1138" y="182" font-size="14" font-weight="400" fill="#1f2937" text-anchor="start">After 300 trees: probability p</text>
+<text x="1138" y="202" font-size="14" font-weight="400" fill="#1f2937" text-anchor="start">= sigmoid(F0 + sum of 300</text>
+<text x="1138" y="222" font-size="14" font-weight="400" fill="#1f2937" text-anchor="start">scaled trees)</text>
+<path d="M 971.0 130 V 104 H 429.0 V 127" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-dasharray="7 4" marker-end="url(#ar2)"/>
+<text x="700.0" y="97" font-size="14" font-weight="700" fill="#4f46e5" text-anchor="middle">repeat 300 times (n_estimators / max_iter = 300)</text>
+<text x="40" y="285" font-size="19" font-weight="700" fill="#1f2937" text-anchor="start">Score of two rows as trees are added (illustrative)</text>
+<rect x="100" y="330" width="540" height="300" fill="#f9fafb" stroke="#9ca3af"/>
+<line x1="100" y1="630" x2="640" y2="630" stroke="#e5e7eb"/>
+<text x="90" y="635" font-size="13" font-weight="400" fill="#4b5563" text-anchor="end">0</text>
+<line x1="100" y1="555.0" x2="640" y2="555.0" stroke="#e5e7eb"/>
+<text x="90" y="560.0" font-size="13" font-weight="400" fill="#4b5563" text-anchor="end">0.25</text>
+<line x1="100" y1="480.0" x2="640" y2="480.0" stroke="#e5e7eb"/>
+<text x="90" y="485.0" font-size="13" font-weight="400" fill="#4b5563" text-anchor="end">0.5</text>
+<line x1="100" y1="405.0" x2="640" y2="405.0" stroke="#e5e7eb"/>
+<text x="90" y="410.0" font-size="13" font-weight="400" fill="#4b5563" text-anchor="end">0.75</text>
+<line x1="100" y1="330" x2="640" y2="330" stroke="#e5e7eb"/>
+<text x="90" y="335" font-size="13" font-weight="400" fill="#4b5563" text-anchor="end">1</text>
+<text x="100.0" y="652" font-size="13" font-weight="400" fill="#4b5563" text-anchor="middle">0</text>
+<text x="280.0" y="652" font-size="13" font-weight="400" fill="#4b5563" text-anchor="middle">100</text>
+<text x="460.0" y="652" font-size="13" font-weight="400" fill="#4b5563" text-anchor="middle">200</text>
+<text x="640.0" y="652" font-size="13" font-weight="400" fill="#4b5563" text-anchor="middle">300</text>
+<text x="370.0" y="674" font-size="14" font-weight="400" fill="#4b5563" text-anchor="middle">number of trees added</text>
+<text x="45" y="480.0" font-size="14" fill="#4b5563" transform="rotate(-90 45 480.0)" text-anchor="middle">predicted probability p</text>
+<polyline points="100.0,614.4 109.0,607.0 118.0,597.3 127.0,585.3 136.0,571.1 145.0,555.0 154.0,537.5 163.0,519.5 172.0,501.5 181.0,484.1 190.0,467.8 199.0,452.9 208.0,439.5 217.0,427.6 226.0,417.2 235.0,408.1 244.0,400.2 253.0,393.3 262.0,387.4 271.0,382.3 280.0,377.8 289.0,374.0 298.0,370.6 307.0,367.7 316.0,365.2 325.0,362.9 334.0,360.9 343.0,359.2 352.0,357.6 361.0,356.3 370.0,355.0 379.0,354.0 388.0,353.0 397.0,352.1 406.0,351.3 415.0,350.6 424.0,350.0 433.0,349.4 442.0,348.8 451.0,348.4 460.0,347.9 469.0,347.5 478.0,347.2 487.0,346.8 496.0,346.5 505.0,346.3 514.0,346.0 523.0,345.8 532.0,345.6 541.0,345.4 550.0,345.2 559.0,345.0 568.0,344.9 577.0,344.7 586.0,344.6 595.0,344.5 604.0,344.4 613.0,344.3 622.0,344.2 631.0,344.1 640.0,344.0" fill="none" stroke="#dc2626" stroke-width="3.5"/>
+<polyline points="100.0,614.4 109.0,617.3 118.0,619.6 127.0,621.4 136.0,622.7 145.0,623.8 154.0,624.7 163.0,625.4 172.0,626.0 181.0,626.4 190.0,626.8 199.0,627.1 208.0,627.4 217.0,627.6 226.0,627.8 235.0,628.0 244.0,628.1 253.0,628.3 262.0,628.4 271.0,628.5 280.0,628.6 289.0,628.6 298.0,628.7 307.0,628.8 316.0,628.8 325.0,628.9 334.0,628.9 343.0,628.9 352.0,629.0 361.0,629.0 370.0,629.0 379.0,629.0 388.0,629.1 397.0,629.1 406.0,629.1 415.0,629.1 424.0,629.1 433.0,629.2 442.0,629.2 451.0,629.2 460.0,629.2 469.0,629.2 478.0,629.2 487.0,629.2 496.0,629.2 505.0,629.2 514.0,629.2 523.0,629.2 532.0,629.3 541.0,629.3 550.0,629.3 559.0,629.3 568.0,629.3 577.0,629.3 586.0,629.3 595.0,629.3 604.0,629.3 613.0,629.3 622.0,629.3 631.0,629.3 640.0,629.3" fill="none" stroke="#2563eb" stroke-width="3.5"/>
+<text x="632" y="402" font-size="14" font-weight="700" fill="#dc2626" text-anchor="end">row with an RLF ahead (y = 1): p rises</text>
+<text x="632" y="614" font-size="14" font-weight="700" fill="#2563eb" text-anchor="end">normal row (y = 0): p falls</text>
+<text x="40" y="710" font-size="14" font-weight="400" fill="#1f2937" text-anchor="start">At 0 trees every row has the same starting p. Each tree then moves the score only a</text>
+<text x="40" y="730" font-size="14" font-weight="400" fill="#1f2937" text-anchor="start">little (learning rate 0.05), and is fitted to what the previous trees still get wrong.</text>
+<text x="720" y="285" font-size="19" font-weight="700" fill="#1f2937" text-anchor="start">What is specific to XGBoost</text>
+<rect x="720" y="300" width="640" height="480" fill="#f9fafb" stroke="#9ca3af"/>
+<text x="740" y="330" font-size="15" font-weight="700" fill="#1f2937" text-anchor="start">a) Random subsample for each tree</text>
+<rect x="760" y="348" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="778" y="348" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="796" y="348" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="814" y="348" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="832" y="348" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="850" y="348" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="868" y="348" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="886" y="348" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="904" y="348" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="922" y="348" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="760" y="366" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="778" y="366" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="796" y="366" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="814" y="366" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="832" y="366" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="850" y="366" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="868" y="366" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="886" y="366" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="904" y="366" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="922" y="366" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="760" y="384" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="778" y="384" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="796" y="384" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="814" y="384" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="832" y="384" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="850" y="384" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="868" y="384" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="886" y="384" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="904" y="384" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="922" y="384" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="760" y="402" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="778" y="402" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="796" y="402" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="814" y="402" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="832" y="402" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="850" y="402" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="868" y="402" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="886" y="402" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="904" y="402" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="922" y="402" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="760" y="420" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="778" y="420" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="796" y="420" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="814" y="420" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="832" y="420" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="850" y="420" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="868" y="420" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="886" y="420" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="904" y="420" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="922" y="420" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="760" y="438" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="778" y="438" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="796" y="438" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="814" y="438" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="832" y="438" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="850" y="438" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="868" y="438" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="886" y="438" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="904" y="438" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="922" y="438" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="760" y="456" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="778" y="456" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="796" y="456" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="814" y="456" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="832" y="456" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="850" y="456" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="868" y="456" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="886" y="456" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="904" y="456" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="922" y="456" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="760" y="474" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="778" y="474" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="796" y="474" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="814" y="474" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="832" y="474" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="850" y="474" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="868" y="474" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="886" y="474" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="904" y="474" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="922" y="474" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="760" y="492" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="778" y="492" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="796" y="492" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="814" y="492" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="832" y="492" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="850" y="492" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="868" y="492" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="886" y="492" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="904" y="492" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="922" y="492" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="760" y="510" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="778" y="510" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="796" y="510" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="814" y="510" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="832" y="510" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="850" y="510" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="868" y="510" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="886" y="510" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<rect x="904" y="510" width="16" height="16" fill="#e5e7eb" stroke="#d1d5db"/>
+<rect x="922" y="510" width="16" height="16" fill="#93c5fd" stroke="#3b82f6"/>
+<text x="850" y="546" font-size="13" font-weight="400" fill="#4b5563" text-anchor="middle">10 columns (features)</text>
+<text x="745" y="438" font-size="13" fill="#4b5563" transform="rotate(-90 745 438)" text-anchor="middle">rows</text>
+<text x="760" y="570" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">Blue: used by this tree. Gray: left out.</text>
+<text x="760" y="588" font-size="13" font-weight="700" fill="#1f2937" text-anchor="start">subsample = 0.8 (rows)</text>
+<text x="760" y="606" font-size="13" font-weight="700" fill="#1f2937" text-anchor="start">colsample_bytree = 0.8 (features)</text>
+<text x="1030" y="330" font-size="15" font-weight="700" fill="#1f2937" text-anchor="start">b) Depth-wise growth</text>
+<line x1="1190" y1="375" x2="1115" y2="435" stroke="#6b7280" stroke-width="2"/>
+<line x1="1190" y1="375" x2="1265" y2="435" stroke="#6b7280" stroke-width="2"/>
+<line x1="1115" y1="435" x2="1078" y2="495" stroke="#6b7280" stroke-width="2"/>
+<line x1="1115" y1="435" x2="1152" y2="495" stroke="#6b7280" stroke-width="2"/>
+<line x1="1265" y1="435" x2="1228" y2="495" stroke="#6b7280" stroke-width="2"/>
+<line x1="1265" y1="435" x2="1302" y2="495" stroke="#6b7280" stroke-width="2"/>
+<circle cx="1190" cy="375" r="14" fill="#fff" stroke="#111827" stroke-width="2"/>
+<circle cx="1115" cy="435" r="14" fill="#fff" stroke="#111827" stroke-width="2"/>
+<circle cx="1265" cy="435" r="14" fill="#fff" stroke="#111827" stroke-width="2"/>
+<rect x="1054" y="482" width="48" height="26" rx="5" fill="#dbeafe" stroke="#6b7280" stroke-width="2"/><text x="1078" y="500" font-size="13" font-weight="700" fill="#111827" text-anchor="middle">-0.4</text>
+<rect x="1128" y="482" width="48" height="26" rx="5" fill="#dbeafe" stroke="#6b7280" stroke-width="2"/><text x="1152" y="500" font-size="13" font-weight="700" fill="#111827" text-anchor="middle">-0.1</text>
+<rect x="1204" y="482" width="48" height="26" rx="5" fill="#fee2e2" stroke="#6b7280" stroke-width="2"/><text x="1228" y="500" font-size="13" font-weight="700" fill="#111827" text-anchor="middle">+0.2</text>
+<rect x="1278" y="482" width="48" height="26" rx="5" fill="#fee2e2" stroke="#6b7280" stroke-width="2"/><text x="1302" y="500" font-size="13" font-weight="700" fill="#111827" text-anchor="middle">+0.9</text>
+<text x="1190" y="380" font-size="13" font-weight="700" fill="#111827" text-anchor="middle">1</text>
+<text x="1115" y="440" font-size="13" font-weight="700" fill="#111827" text-anchor="middle">2</text>
+<text x="1265" y="440" font-size="13" font-weight="700" fill="#111827" text-anchor="middle">2</text>
+<text x="1190" y="540" font-size="13" font-weight="400" fill="#4b5563" text-anchor="middle">leaf value = amount added to the score</text>
+<text x="1190" y="558" font-size="13" font-weight="400" fill="#4b5563" text-anchor="middle">(before the 0.05 scaling)</text>
+<text x="1030" y="592" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">All nodes of a level are split before the next one,</text>
+<text x="1030" y="610" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">down to max_depth = 6 (at most 64 leaves).</text>
+<text x="740" y="660" font-size="15" font-weight="700" fill="#1f2937" text-anchor="start">c) How a split and a leaf value are chosen (second-order boosting)</text>
+<text x="740" y="684" font-size="14" font-weight="400" fill="#1f2937" text-anchor="start">For each row, g = p - y (gradient) and h = p(1 - p) (hessian).</text>
+<text x="740" y="706" font-size="14" font-weight="400" fill="#1f2937" text-anchor="start">gain = G_L²/(H_L + λ) + G_R²/(H_R + λ) - G²/(H + λ)</text>
+<text x="740" y="726" font-size="14" font-weight="400" fill="#1f2937" text-anchor="start">G and H are the sums of g and h over the rows of the node (L = left child, R = right child).</text>
+<text x="740" y="746" font-size="14" font-weight="400" fill="#1f2937" text-anchor="start">leaf value = - G / (H + λ), with λ = 1 (L2 regularization, default).</text>
+<text x="740" y="770" font-size="14" font-weight="700" fill="#1f2937" text-anchor="start">No early stopping: all 300 trees are kept.</text>
+</svg>

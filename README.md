@@ -860,12 +860,82 @@ For the slope features, the first `w` seconds of each UE have no value `w` secon
 - **In the code:** scikit-learn's `score_samples` returns the **negative** of this value, so `score = -score_samples(X)` brings it back to the anomaly score above. **Higher means more anomalous**.
 - **Output used by the evaluation:** one score per UE-second row. As for the other families, only the ranking of rows matters, and the alert threshold is the 99th percentile of the normal rows' scores (`TARGET_FPR`), not 0.5.
 
-### Gradient boosting
+### HistGradientBoosting
 
-- **XGBoost hyperparameters:** `n_estimators=300`, `max_depth=6`, `learning_rate=0.05`, `subsample=0.8`, `colsample_bytree=0.8`, `scale_pos_weight=sqrt(neg/pos)`, `random_state=SEED`.
-- **HistGradientBoosting:** a separate model run next to XGBoost (not a fallback in the current code); `max_iter=300`, `max_depth=6`, `learning_rate=0.05`, `class_weight="balanced"`; its internal early stopping may keep fewer than 300 trees.
-- **Learned:** the trees (split features, thresholds, leaf values). Each new tree corrects the errors of the previous ones, and their summed outputs go through a sigmoid.
-- **XGBoost versus HistGradientBoosting:** the same algorithm family with near-identical accuracy in these tests. XGBoost scores about 3× faster at the 5 s horizon and 7 to 8× faster at 30 s, and gives feature importances.
+**Characteristics of the family.** Gradient boosting builds a strong classifier by adding many small decision trees one after the other. HistGradientBoosting is scikit-learn's histogram-based implementation. XGBoost (next section) is the same family. It is run here as a separate model.
+
+- **Supervised:** it learns from the labels, so it is trained on all the training rows, normal and positive, and it learns what a pre-failure row looks like, not just what is unusual.
+- **Works on all 105 features** with no scaling, and it captures non-linear effects and interactions between features through its trees.
+- **Fast on large tables:** feature values are grouped into at most 255 bins, so finding a split compares bin edges, not every distinct value.
+- **Robust defaults:** no feature scaling, and it handles missing values natively.
+- **Limits:** it scores each row independently from its own 105 feature values (the window features already summarize recent seconds), and it needs labels, so it can only learn failure patterns present in the training data. It gives no feature importances out of the box, so this project saves no importance artifact for it.
+
+![How HistGradientBoosting learns: boosting loop, histogram bins, leaf-wise growth and early stopping](docs/histgradientboosting.png)
+
+**Library and functions.** **scikit-learn**'s `sklearn.ensemble.HistGradientBoostingClassifier`, wrapped by the `HISTGBM` class in `RLF_train.py`. The code calls `.fit(X, y)` to train and `predict_proba(X)[:, 1]` to score.
+
+**Hyperparameters and their meaning.**
+
+- **`max_iter=300`:** the maximum number of boosting rounds, that is, of trees. More rounds fit the training data more closely, and too many overfit. Early stopping (below) may stop earlier.
+- **`learning_rate=0.05`:** how much each tree's output is scaled before it is added. A small value makes learning gradual and more robust, but needs more trees.
+- **`max_depth=6`:** the maximum depth of each tree. Deeper trees capture more complex feature interactions but overfit more easily.
+- **`class_weight="balanced"`:** each class gets a weight inversely proportional to its frequency, so the rare positive rows count as much in total as the many normal rows. Without it the model would be dominated by normal rows.
+- **`random_state=SEED` (42):** seed for the random choices (the early-stopping split and the sampling used to build the bins), for reproducibility.
+- **Scikit-learn defaults, not set in the code:** `max_leaf_nodes=31` (maximum leaves per tree), `min_samples_leaf=20` (minimum rows in a leaf), `l2_regularization=0`, `max_bins=255` (the histogram bins), the log-loss (cross-entropy) objective, and early stopping on (`early_stopping="auto"` turns it on for more than 10,000 rows) with `validation_fraction=0.1` and `n_iter_no_change=10`.
+- **Early stopping:** 10% of the training rows are held out at random, and boosting stops when their loss has not improved for 10 rounds, so **fewer than 300 trees may be kept**. Neighbouring seconds of the same UE are very similar, so this check is optimistic and may stop later than a time-based split would.
+
+**How the learning works.** Boosting is a loop that corrects the previous trees' errors.
+
+- **Start:** a constant score F0, the same for every row, set from the class balance of the training data (taking the class weights into account).
+- **Errors:** for each row, compute the error `p - y`, where `p = sigmoid(score)` is the current predicted probability and `y` is the label. This is the gradient of the log-loss.
+- **New tree:** fit a small regression tree that predicts these errors from the features. The tree is **leaf-wise**: it starts with one leaf and repeatedly splits the leaf whose split reduces the loss the most, until it has 31 leaves or depth 6. Split candidates are the histogram bin edges of each feature.
+- **Update:** add the tree's output to each row's score, scaled by `learning_rate` 0.05. Rows that the model still gets wrong have larger errors, so the next tree concentrates on them.
+- **Repeat** for up to 300 rounds, or until early stopping.
+- **Learned:** the trees (split feature, bin threshold and leaf value of each node). No MLflow artifact is saved for this model.
+
+**How the scoring works.**
+
+- **Score:** add the leaf values of the row's leaf in each tree to F0, scaled by the learning rate, and pass the sum through a sigmoid: `p = sigmoid(F0 + 0.05 x sum of the tree outputs)`. `predict_proba(X)[:, 1]` returns this `p`.
+- **Output used by the evaluation:** one number per UE-second row, between 0 and 1, interpreted as the predicted probability of an RLF within the horizon. Because of the class weights it is **not a calibrated probability** (it overestimates the true rate), but only the ranking of rows matters here. The alert threshold is the 99th percentile of the normal rows' scores (`TARGET_FPR`).
+
+### XGBoost
+
+**Characteristics of the family.** XGBoost ("eXtreme Gradient Boosting") is an optimized, regularized implementation of gradient boosting with trees, the same family as HistGradientBoosting.
+
+- **Supervised, on all 105 features,** with the same strengths as HistGradientBoosting: non-linear effects and interactions, no scaling, native handling of missing values.
+- **Second-order learning:** it uses both the gradient and the curvature (hessian) of the loss to choose splits and leaf values, with built-in regularization.
+- **Randomization per tree:** each tree sees a random 80% of the rows and 80% of the features, which reduces overfitting.
+- **Feature importances:** it provides them, and the project saves the top 15 as `feature_importance_top15.json`.
+- **Limits:** same as for HistGradientBoosting. It needs labels and scores each row independently.
+
+![How XGBoost learns: boosting loop, random subsample per tree, depth-wise growth and the split and leaf formulas](docs/xgboost.png)
+
+**Library and functions.** The **xgboost** package, `xgboost.XGBClassifier`, wrapped by the `XGBM` class in `RLF_train.py`. The code calls `.fit(X, y)` to train and `predict_proba(X)[:, 1]` to score.
+
+**Hyperparameters and their meaning.**
+
+- **`n_estimators=300`:** the number of boosting rounds, that is, of trees.
+- **`learning_rate=0.05`:** the shrinkage applied to each tree's output before it is added. Small values need more trees but generalize better.
+- **`max_depth=6`:** the maximum depth of each tree (at most 64 leaves).
+- **`subsample=0.8`:** each tree is trained on a random 80% of the rows.
+- **`colsample_bytree=0.8`:** each tree uses a random 80% of the features.
+- **`scale_pos_weight=sqrt(neg/pos)`:** weights positive rows more to compensate for the class imbalance. The square root is a compromise: it rebalances partly (about 4.6 when positives are 4.5% of the rows) without the full neg/pos ratio. `neg` and `pos` are counted on the training rows of each fit.
+- **`eval_metric="aucpr"`:** the metric XGBoost would monitor during training. No validation set is passed to `fit`, so it has **no effect** here.
+- **`n_jobs=-1`:** use all CPU cores. It changes speed, not results.
+- **`random_state=SEED` (42):** seed for the row and feature sampling.
+- **Defaults in recent XGBoost versions, not set in the code:** the logistic objective for two classes, the histogram tree method, `min_child_weight=1`, `reg_lambda=1` (L2 regularization on the leaf values) and `gamma=0` (no minimum gain to split). There is no early stopping, so all 300 trees are kept.
+
+**How the learning works.** The boosting loop is the same as for HistGradientBoosting, with these specifics:
+
+- **Per tree:** a random 80% of the rows and 80% of the features are drawn.
+- **Gradient and hessian:** for each row, `g = p - y` and `h = p(1 - p)`, where `p = sigmoid(score)`.
+- **Tree growth:** **depth-wise**, one level at a time down to depth 6. Each split is chosen to maximize `gain = G_L^2/(H_L + lambda) + G_R^2/(H_R + lambda) - G^2/(H + lambda)`, where `G` and `H` are the sums of `g` and `h` over the rows of a node (`L` and `R` are the two children), and `lambda = 1`.
+- **Leaf value:** `-G / (H + lambda)`, the Newton step that would reduce the loss the most for the rows in that leaf. It is scaled by `learning_rate` 0.05 and added to the row's score.
+- **Learned:** the trees (split feature, threshold and leaf value of each node) and the importances saved as `feature_importance_top15.json`.
+
+**How the scoring works.** As for HistGradientBoosting: `p = sigmoid(F0 + 0.05 x sum of the tree outputs)`, returned by `predict_proba(X)[:, 1]`. It is a score between 0 and 1, not a calibrated probability (because of `scale_pos_weight`), and only the ranking of rows matters.
+
+**XGBoost versus HistGradientBoosting:** the same algorithm family with near-identical accuracy in these tests. XGBoost scores about 3x faster at the 5 s horizon and 7 to 8x faster at 30 s, and gives feature importances.
 
 ### GRU
 
