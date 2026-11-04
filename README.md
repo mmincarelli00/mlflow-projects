@@ -823,9 +823,39 @@ For the slope features, the first `w` seconds of each UE have no value `w` secon
 
 ### Isolation Forest
 
-- **Hyperparameters:** `n_estimators=200`, `contamination="auto"` (logged but unused, because scores are read directly), `random_state=SEED`; scikit-learn defaults for the rest (256 rows per tree, all features).
-- **Learned:** the structure of the 200 random trees (which feature and split value at each node).
-- **Idea:** each tree splits the data at random; unusual rows are isolated in fewer splits.
+**Characteristics of the family.** Isolation Forest is an unsupervised anomaly detector based on an ensemble of random trees. It does not model what "normal" looks like (as a distance or a density would). It measures how **easy a row is to isolate**.
+
+- **Idea:** unusual rows are few and different, so random splits separate them from the rest after only a few cuts. Typical rows sit inside dense groups and need many cuts.
+- **No failure labels needed to learn:** it learns the structure of normal behavior only. In this project it is trained on the **normal rows only** (`label == 0`), so it is semi-supervised, and the positive rows are used just for scoring and evaluation.
+- **Works on all 105 features at once**, with no scaling needed, because trees only compare a feature with a split value.
+- **Cheap and fast:** each tree uses a small sample (256 rows), training is linear in the number of trees, and scoring is just walking each row down 200 short trees.
+- **Limits:** it flags anything unusual, not specifically pre-failure behavior, and it cannot use the labels to tell harmless anomalies from real ones. Each row is scored on its own, so it has no memory beyond the window features.
+
+![How Isolation Forest isolates rows with random splits and turns path lengths into a score](docs/isolation-forest.png)
+
+**Hyperparameters and their meaning.**
+
+- **`n_estimators=200`:** the number of random trees. More trees make the average path length more stable and the scores less noisy, at a linear cost in time. Beyond a few hundred the gain is small.
+- **`random_state=SEED` (42):** seed of the random choices (the row samples, and the features and split values at each node), so results are reproducible.
+- **`contamination="auto"`:** the expected share of anomalies. It only sets the threshold that scikit-learn's own `predict` would use (offset of -0.5). It is logged but has **no effect here**, because the code reads `score_samples` directly and the threshold comes from `TARGET_FPR`.
+- **`n_jobs=-1`:** use all CPU cores for fitting. It changes speed, not results.
+- **Scikit-learn defaults, not set in the code:** `max_samples="auto"` (each tree trains on a random sample of 256 rows, drawn without replacement, `bootstrap=False`), `max_features=1.0` (every node can pick among all features) and a maximum tree depth of `ceil(log2(256)) = 8`. The small sample and the depth limit are deliberate: isolating an outlier needs only a few splits, and small samples make it easier to tell anomalies from normal rows.
+
+**How the learning works.** There is no optimization and no loss function: building the trees is random.
+
+- **Train rows:** all training rows with `label == 0`.
+- **Per tree:** draw a random sample of 256 of these rows. Start with all of them in one node, pick a **random feature**, pick a **random split value** between the minimum and maximum of that feature in the node, and send each row left or right. Repeat on each child until a node holds a single row or the depth limit of 8 is reached.
+- **Repeat** to build 200 independent trees, each on its own sample and with its own random splits.
+- **Learned:** only the tree structure, which feature and split value each node uses. Nothing is saved as an MLflow artifact.
+
+**How the scoring works.** The score is calculated for each row independently of the others.
+
+- **Path length:** drop the row down each tree and count the splits `h(x)` needed to reach a leaf. If a leaf still holds several training rows (the depth limit was reached), the expected extra path for that many rows is added, so a leaf is never treated as fully isolated when it is not.
+- **Average:** `E[h(x)]` is the mean of `h(x)` over the 200 trees. Unusual rows get short paths on average.
+- **Normalize:** `c(n)` is the average path length of an unsuccessful search in a binary tree of n = 256 rows, about 10.2. It makes the score independent of the sample size.
+- **Score:** `anomaly score = 2 ^ (-E[h(x)] / c(n))`, a value between 0 and 1. A row with a path as long as `c(n)` scores about 0.5, a much shorter path scores towards 1 (for example `E[h] = 2` gives 0.87), and a longer path scores below 0.5.
+- **In the code:** scikit-learn's `score_samples` returns the **negative** of this value, so `score = -score_samples(X)` brings it back to the anomaly score above. **Higher means more anomalous**.
+- **Output used by the evaluation:** one score per UE-second row. As for the other families, only the ranking of rows matters, and the alert threshold is the 99th percentile of the normal rows' scores (`TARGET_FPR`), not 0.5.
 
 ### Gradient boosting
 
