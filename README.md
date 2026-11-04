@@ -691,6 +691,8 @@ The label of the row at second *t* is 1 if an RLF occurs in (*t*, *t* + `horizon
 - **30 s horizon:** 4.488% of the rows are positive, so about **95.5%** are normal.
 - **5 s horizon:** 0.752% are positive, so about **99.2%** are normal.
 
+NOTE: setting TARGET_FPR = 0 makes sense only if all positive rows have always an higher score than normal rows, i.e. when the model separates the classes perfectly, which is almost never the case in real cases. In fact in reality there is always an overlap between the 2 classes and it's necessary to accept a small % of false positives (hence a TARGET_FPR value > 0) as a deliberate compromise so that the threshold is stable, false negative rate remains low and the models are comparable.
+ 
 **Metrics**
 
 | Metric | What it measures | Better |
