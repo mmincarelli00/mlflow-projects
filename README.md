@@ -779,16 +779,17 @@ The column name `recall_at_1pct_fpr` is fixed in the code and matches the curren
 
 ## Model families
 
-The four families (five models, because gradient boosting runs as both XGBoost and HistGradientBoosting) run from the simplest rule to a deep-learning model, so each step has to earn its extra complexity.
+The five models (four families, because gradient boosting runs as two separate models, XGBoost and HistGradientBoosting) run from the simplest rule to a deep-learning model, so each step has to earn its extra complexity.
 
 | Family | Learning type | Input | How it scores a row |
 | --- | --- | --- | --- |
 | Robust z-score | Unsupervised, labels ignored | 6 engineered features | Largest absolute robust z-score among the 6 features |
 | Isolation Forest | Unsupervised, but trained on normal rows only | All 105 features | Negative of scikit-learn's `score_samples`: a short average path through random trees means more anomalous |
-| Gradient boosting: XGBoost and HistGradientBoosting (two separate runs) | Supervised classifier | All 105 features | Predicted probability of an RLF within the horizon |
+| XGBoost (gradient boosting) | Supervised classifier | All 105 features | Predicted probability of an RLF within the horizon |
+| HistGradientBoosting (gradient boosting) | Supervised classifier | All 105 features | Predicted probability of an RLF within the horizon |
 | GRU (PyTorch) | Supervised sequence model | Last 30 or 60 s of 13 raw KPI channels | Sigmoid of the network's output after reading the window |
 
-**Why these four:** the z-score shows how far a simple statistical rule goes; Isolation Forest is an anomaly detector that needs no failure labels; boosting is the standard strong learner for tabular data; and the GRU tests whether a sequence model reading raw KPIs adds anything.
+**Why these five:** the z-score shows how far a simple statistical rule goes; Isolation Forest is an anomaly detector that needs no failure labels; boosting, run as both XGBoost and HistGradientBoosting, is the standard strong learner for tabular data; and the GRU tests whether a sequence model reading raw KPIs adds anything.
 
 ### Robust z-score baseline
 
