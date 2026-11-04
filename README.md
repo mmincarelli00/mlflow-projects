@@ -793,7 +793,31 @@ The five models (four families, because gradient boosting runs as two separate m
 
 ### Robust z-score baseline
 
-The 6 features are `rsrp_slope_5s`, `sinr_slope_5s`, `nb_gap`, `dl_bler_mean_5s`, `harq_retx_mean_5s` and `ta_slope_30s`. The median and MAD (median absolute deviation) of each, computed on all training rows, are the only learned values (12 numbers). It has no randomness.
+**How it works.** It is a simple statistical rule with no labels and no randomness. It learns what a "typical" value of each of 6 features looks like, then scores every UE-second by how far its **most unusual** feature is from typical. A row far from the typical values on at least one feature gets a high score.
+
+1. **Fit (`fit`):** for each of the 6 features, over **all training rows** (labels are ignored, so positive rows are included), compute the median and the scaled MAD (median absolute deviation): `med = median(x)` and `mad = 1.4826 * median(|x - med|) + 1e-9`. The factor 1.4826 makes the MAD comparable to a standard deviation when the data are roughly normal, and the `1e-9` avoids a division by zero. These 12 numbers (6 medians and 6 MADs) are the only things learned, and they are saved in `robust_z_stats.json`. The median and MAD are used instead of the mean and standard deviation because they are barely affected by outliers, such as the pre-failure rows themselves.
+2. **Score (`score`):** for each row, compute the robust z-score of each feature, `z_i = (x_i - med_i) / mad_i`, take the absolute value, and keep the **largest** of the 6: `score = max over i of |z_i|`.
+
+**The 6 features.** They are computed in `RLF_features.py` (`add_features`), per UE, over rows sorted by time `t`. All are KPIs that typically degrade before a radio link failure.
+
+| Feature | Meaning | How it is calculated |
+| --- | --- | --- |
+| `rsrp_slope_5s` | How fast the serving-cell signal power (RSRP) is changing | `(rsrp[t] - rsrp[t-5]) / 5`, in dB per second. A strongly negative value means the signal is dropping |
+| `sinr_slope_5s` | How fast the downlink signal quality (SINR) is changing | `(sinr[t] - sinr[t-5]) / 5`, in dB per second |
+| `nb_gap` | How much stronger the best neighbor cell is than the serving cell | `neighbor_rsrp[t] - rsrp[t]`, in dB, at the same second (no window). A growing positive gap means the UE should hand over and may fail if it does not |
+| `dl_bler_mean_5s` | Recent downlink block error rate | Mean of `dl_bler` over the last 5 seconds (a rolling window, at least 1 sample), a fraction between 0 and 1 |
+| `harq_retx_mean_5s` | Recent HARQ retransmission level | Mean of `harq_retx` over the last 5 seconds |
+| `ta_slope_30s` | Slow drift of the timing advance, a proxy for the UE moving away from the cell | `(ta[t] - ta[t-30]) / 30` |
+
+For the slope features, the first `w` seconds of each UE have no value `w` seconds earlier, so the feature is set to 0 there (as are all NaN features, in `add_features`).
+
+**Output.** For each UE-second row, one number: the **anomaly score**, `max |robust z|`.
+
+- It is always 0 or more, with no upper limit. A value of 3 means "the most unusual feature is 3 robust standard deviations from its typical value".
+- It is not a probability and not a yes/no decision. Higher means more anomalous, and only the ranking of the rows matters. The alert threshold is applied afterwards in the evaluation, as the 99th percentile of the normal rows' scores (see `TARGET_FPR`).
+- It looks at the **absolute** value, so it flags unusual values in both directions, including a feature that moves in the "good" direction.
+- It scores each row on its own, from that row's 6 feature values. It does not look at other rows beyond the windows already inside the features.
+- The **max** means a single extreme feature is enough to raise the score, while several mildly unusual features do not add up.
 
 ### Isolation Forest
 
