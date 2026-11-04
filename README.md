@@ -791,12 +791,15 @@ The five models (four families, because gradient boosting runs as two separate m
 
 **Why these five:** the z-score shows how far a simple statistical rule goes; Isolation Forest is an anomaly detector that needs no failure labels; boosting, run as both XGBoost and HistGradientBoosting, is the standard strong learner for tabular data; and the GRU tests whether a sequence model reading raw KPIs adds anything.
 
-### Robust z-score baseline
+### Robust z-score
 
 **How it works.** It is a simple statistical rule with no labels and no randomness. It learns what a "typical" value of each of 6 features looks like, then scores every UE-second by how far its **most unusual** feature is from typical. A row far from the typical values on at least one feature gets a high score.
 
 1. **Fit (`fit`):** for each of the 6 features, over **all training rows** (labels are ignored, so positive rows are included), compute the median and the scaled MAD (median absolute deviation): `med = median(x)` and `mad = 1.4826 * median(|x - med|) + 1e-9`. The factor 1.4826 makes the MAD comparable to a standard deviation when the data are roughly normal, and the `1e-9` avoids a division by zero. These 12 numbers (6 medians and 6 MADs) are the only things learned, and they are saved in `robust_z_stats.json`. The median and MAD are used instead of the mean and standard deviation because they are barely affected by outliers, such as the pre-failure rows themselves.
 2. **Score (`score`):** for each row, compute the robust z-score of each feature, `z_i = (x_i - med_i) / mad_i`, take the absolute value, and keep the **largest** of the 6: `score = max over i of |z_i|`.
+
+- **Hyperparameters:** none to tune and no randomness. The fixed settings are the 6 input features (`BASELINE_COLS`, the only parameter logged to MLflow, as `cols`), the MAD scale factor 1.4826, the epsilon 1e-9 and the combination rule (maximum of the absolute z-scores).
+- **Learned:** the 6 medians and 6 MADs, saved in `robust_z_stats.json`.
 
 **The 6 features.** They are computed in `RLF_features.py` (`add_features`), per UE, over rows sorted by time `t`. All are KPIs that typically degrade before a radio link failure.
 
