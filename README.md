@@ -299,7 +299,7 @@ The pipeline has three parts:
 .
 ├── RLF_synthetic_data.py   # synthetic per-UE, per-second KPI generator
 ├── RLF_features.py         # 105 features + RLF label
-├── RLF_train.py            # training, evaluation and MLflow logging
+├── RLF_train.py            # training,  and MLflow logging
 ├── RLF_requirements.txt    # mlflow, numpy, pandas, scikit-learn, xgboost (torch is also required: add it to this file or install it separately)
 └── docs/
     ├── oran-architecture.png   # O-RAN architecture diagram used in this README
@@ -598,8 +598,8 @@ Every family is trained and scored on the same time-ordered splits, so differenc
 **Splits**
 
 - **4 rolling-origin time folds.** Train on the first 50%, 62.5%, 75% and 87.5% of the time range, then test on the next 12.5% after a gap (embargo) equal to the horizon. The gap stops the last training labels from reaching into the test period. Reported metrics are the average over the 4 folds.
-- **1 cell hold-out.** Train on the early period (before 70% of the time) using about 75% of the cells; test on the other 25% of cells in the later period. It checks generalization to unseen cells.
-- **1 final model** trained on all the data and logged to MLflow. It has no test score.
+- **1 cell hold-out.** Train on the early period (before 70% of the time) using about 75% of the cells; test on the other 25% of cells in the later period. It checks generalization to unseen cells. Their metrics come from one split, so each is a single value, not an average.
+- **1 final model** trained on all the data and logged to MLflow. It has no test score. This is the final model that would be actually deployed and used in production.
 - Inside training, the GRU holds out the last 15% of its training period to choose the best epoch, and scikit-learn's HistGradientBoosting uses its own internal early-stopping validation when the data is large.
 
 #### What a fold is
@@ -645,9 +645,44 @@ What to notice in the example:
 - **The first half is never tested.** It is only ever training data, because a model needs some history before it can predict anything.
 - **A positive row near the end of training is safe.** A row at second 1,799 in fold 1 is labelled by RLFs in 1,800 to 1,829, all inside the gap, so none of the test period's failures leak into training.
 
-Each of the 5 models (z-score, Isolation Forest, HistGradientBoosting, XGBoost, GRU) is fit and scored on these same 4 folds. The reported metrics (`pr_auc`, recall at the false-alarm rate, event recall, lead time, alert episodes, inference time) are the average of the 4 test blocks, so differences between models come from the models and not from different data. Folds from a single dataset are still not independent samples of the world: they come from one data seed, which is why the README recommends repeating the runs with several data and model seeds.
+In summary. each of the 5 models (z-score, Isolation Forest, HistGradientBoosting, XGBoost, GRU) is fit and scored on these same 4 folds and 1 cell hold-out fold. The reported metrics  of the 4 test blocks (`pr_auc`, recall at the false-alarm rate, event recall, lead time, alert episodes, inference time) are average values, while the cell hold-out metrics (cell_holdout pr_auc, cell_holdout recall at the false-alarm rate, cell_holdout event recall, cell_holdout lead time, cell_holdout alert episodes) are single values. So differences between models come from the models and not from different data. Every reported metric is computed only on test rows, and none is computed on training data.
+
+Every fold, the cell hold-out and the final model create the model with the same hyperparameters. The hyperparameters are written inside each model class and they are the same for every training run. The hyperparameters are not tuned per fold, and nothing is tuned on the test data, so the scores are not inflated by tuning.
 
 **Alert threshold:** each model outputs a risk score per UE-second. In every test fold the threshold is set at the 99th percentile of the scores of normal rows (`1 − TARGET_FPR`, with `TARGET_FPR = 0.01`), so 1% of normal seconds raise an alert. This gives every model the same false-alarm budget. Because it is computed from the test labels, a live system would need a threshold fixed in advance.
+
+**TARGET_FPR** is the false-alarm budget that the evaluation gives to every model: the share of normal UE-seconds that are allowed to trigger an alert. It is set to 0.01 in RLF_train.py, so 1% of normal seconds may raise a false alert.
+
+Definitions:
+
+FPR (false positive rate): among the rows where nothing bad follows (label 0), the share the model flags as an alert. It is false alerts divided by all normal rows.
+Why a target: the models output risk scores on different scales (a probability, a z-score, an anomaly score). To compare them fairly, the evaluation fixes the false-alarm rate and then asks how many real failures each model catches within it.
+
+How it is used
+For each test fold and each model:
+
+Score all the test rows.
+Take only the normal rows (label 0) and find their 99th percentile, 1 - TARGET_FPR. That score is the alert threshold.
+Flag every test row with a score above the threshold as an alert. By construction, 1% of the normal rows are above it.
+Measure how many failures the alerts catch, with recall_at_1pct_fpr, event_recall, median_lead_s and alert_episodes_per_ue_hour.
+
+A normal UE-second is a row whose label is 0, that is, a UE-second for which no RLF happens to that same UE in the next horizon seconds. “Normal” here means “no failure ahead”, and not “the radio link looks healthy”.
+
+The label of the row at second t is 1 if an RLF occurs in (t, t + horizon], as defined in make_labels in RLF_features.py. Every other row is normal and has label 0.
+
+What counts as normal
+
+Healthy seconds: the UE has a good signal and nothing happens. This is most of the data.
+Degradation episodes that do not end in an RLF: the 20% that recover and the 25% that end in a handover. The signal is dropping but no failure follows, so these rows are label 0.
+The early part of an episode that does end in an RLF: a row is positive only within horizon seconds of the failure. With a 5 s horizon, the first seconds of a 10 to 45 s ramp are still normal. With a 30 s horizon, only a short ramp’s first seconds or none are.
+The failure second itself: a row at the RLF second is not labelled positive, because the window starts after t, unless another RLF follows within the horizon. In the synthetic data the UE keeps producing rows after an RLF, so those rows are normal too.
+Sudden RLFs: the seconds before one look healthy, but they are within horizon of the failure, so they are positive. The model cannot recognize them, which is why event recall is capped.
+
+Why this matters for TARGET_FPR
+The alert threshold is the 99th percentile of the scores of exactly these normal rows. So “false alarm” means an alert on a row with no RLF in the next horizon seconds. A model that correctly warns about a degradation that happens to recover is counted as having raised a false alarm. This makes the false-alarm figures somewhat pessimistic, because some alerts during a degradation episode may be operationally useful even though no RLF followed.
+
+Rough proportions
+In the default run with a 30 s horizon, 4.488% of the rows are positive, so about 95.5% are normal. With a 5 s horizon, 0.752% are positive and about 99.2% are normal.
 
 **Metrics**
 
