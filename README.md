@@ -693,6 +693,18 @@ The label of the row at second *t* is 1 if an RLF occurs in (*t*, *t* + `horizon
 
 NOTE: setting TARGET_FPR = 0 makes sense only if all positive rows have always an higher score than normal rows, i.e. when the model separates the classes perfectly, which is almost never the case in real cases. In fact in reality there is always an overlap between the 2 classes and it's necessary to accept a small % of false positives (hence a TARGET_FPR value > 0) as a deliberate compromise so that the threshold is stable, false negative rate remains low and the models are comparable.
  
+**How each family computes the score** (the `score` method in `RLF_train.py`)
+
+Every model turns a UE-second into one risk number, and a higher score always means a higher risk. The alert threshold and the metrics use only the ranking of these scores, so their different scales do not matter.
+
+| Model | Score | In `RLF_train.py` | Uses labels in training? |
+| --- | --- | --- | --- |
+| **Robust z-score** | The largest absolute robust z-score among its 6 features | `np.abs((X - median) / MAD).max(axis=1)` | No |
+| **Isolation Forest** | The negative of scikit-learn's `score_samples`: a shorter average path through the random trees means more anomalous | `-score_samples(X)` | No (trained on normal rows only) |
+| **HistGradientBoosting** | The predicted probability of an RLF within the horizon | `predict_proba(X)[:, 1]` | Yes |
+| **XGBoost** | The predicted probability of an RLF within the horizon | `predict_proba(X)[:, 1]` | Yes |
+| **GRU** | The sigmoid of the network's output after it reads the window of the last 30 or 60 s | `torch.sigmoid(logits)` | Yes |
+
 **Metrics**
 
 | Metric | What it measures | Better |
