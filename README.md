@@ -653,18 +653,19 @@ Every fold, the cell hold-out and the final model create the model with the same
 
 **TARGET_FPR** is the false-alarm budget that the evaluation gives to every model: the share of normal UE-seconds that are allowed to trigger an alert. It is set to 0.01 in RLF_train.py, so 1% of normal seconds may raise a false alert.
 
-Definitions:
+**Definitions**
 
-FPR (false positive rate): among the rows where nothing bad follows (label 0), the share the model flags as an alert. It is false alerts divided by all normal rows.
-Why a target: the models output risk scores on different scales (a probability, a z-score, an anomaly score). To compare them fairly, the evaluation fixes the false-alarm rate and then asks how many real failures each model catches within it.
+- **FPR (false positive rate):** among the rows where nothing bad follows (label 0), the share the model flags as an alert. It is false alerts divided by all normal rows.
+- **Why a target:** the models output risk scores on different scales (a probability, a z-score, an anomaly score). To compare them fairly, the evaluation fixes the false-alarm rate and then asks how many real failures each model catches within it.
 
-How it is used
+**How it is used**
+
 For each test fold and each model:
 
-Score all the test rows.
-Take only the normal rows (label 0) and find their 99th percentile, 1 - TARGET_FPR. That score is the alert threshold.
-Flag every test row with a score above the threshold as an alert. By construction, 1% of the normal rows are above it.
-Measure how many failures the alerts catch, with recall_at_1pct_fpr, event_recall, median_lead_s and alert_episodes_per_ue_hour.
+1. **Score** all the test rows.
+2. Take only the **normal rows** (label 0) and find their **99th percentile**, `1 - TARGET_FPR`. That score is the **alert threshold**.
+3. **Flag** every test row with a score above the threshold as an alert. By construction, **1%** of the normal rows are above it.
+4. **Measure** how many failures the alerts catch, with `recall_at_1pct_fpr`, `event_recall`, `median_lead_s` and `alert_episodes_per_ue_hour`.
 
 A normal UE-second is a row whose label is 0, that is, a UE-second for which no RLF happens to that same UE in the next horizon seconds. “Normal” here means “no failure ahead”, and not “the radio link looks healthy”.
 
