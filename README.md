@@ -797,6 +797,7 @@ The five models (four families, because gradient boosting runs as two separate m
 
 - **Fit (`fit`):** for each of the 6 features, over **all training rows** (labels are ignored, so positive rows are included), compute the median and the scaled MAD (median absolute deviation): `med = median(x)` and `mad = 1.4826 * median(|x - med|) + 1e-9`. The factor 1.4826 makes the MAD comparable to a standard deviation when the data are roughly normal, and the `1e-9` avoids a division by zero. These 12 numbers (6 medians and 6 MADs) are the only things learned, and they are saved in `robust_z_stats.json`. The median and MAD are used instead of the mean and standard deviation because they are barely affected by outliers, such as the pre-failure rows themselves.
 - **Score (`score`):** for each row, compute the robust z-score of each feature, `z_i = (x_i - med_i) / mad_i`, take the absolute value, and keep the **largest** of the 6: `score = max over i of |z_i|`.
+- **Library and functions:** no machine-learning library. It is a custom class, `RobustZ` in `RLF_train.py`, written with **NumPy** only: `np.median` for the medians and MADs in `fit`, and `np.abs` with `.max(axis=1)` for the score in `score`.
 - **Hyperparameters:** none to tune and no randomness. The fixed settings are the 6 input features (`BASELINE_COLS`, the only parameter logged to MLflow, as `cols`), the MAD scale factor 1.4826, the epsilon 1e-9 and the combination rule (maximum of the absolute z-scores).
 - **Learned:** the 6 medians and 6 MADs, saved in `robust_z_stats.json`.
 
@@ -832,6 +833,8 @@ For the slope features, the first `w` seconds of each UE have no value `w` secon
 - **Limits:** it flags anything unusual, not specifically pre-failure behavior, and it cannot use the labels to tell harmless anomalies from real ones. Each row is scored on its own, so it has no memory beyond the window features.
 
 ![How Isolation Forest isolates rows with random splits and turns path lengths into a score](docs/isolation-forest.png)
+
+**Library and functions.** The model is **scikit-learn**'s `sklearn.ensemble.IsolationForest`, wrapped by the `IForest` class in `RLF_train.py`. The code calls `IsolationForest(...).fit(X[y == 0])` to train on the normal rows and `score_samples(X)` to score (negated, so that higher means more anomalous). The `predict` and `decision_function` methods are not used.
 
 **Hyperparameters and their meaning.**
 
