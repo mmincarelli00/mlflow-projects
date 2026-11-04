@@ -707,7 +707,7 @@ Every model turns a UE-second into one risk number, and a higher score always me
 
 **Metrics**
 
-All metrics are computed on the **test rows only** of each split. The first six are calculated on each of the 4 time folds and then averaged (`nanmean`); `cell_holdout_pr_auc` comes from the single cell hold-out split and is not averaged. "Positive rows" are the rows with label 1 (an RLF follows within the horizon), and "normal rows" are the rows with label 0.
+All metrics are computed on the **test rows only** of each split. The first six are calculated on each of the 4 time folds and then averaged (`nanmean`); the five `cell_holdout_*` metrics come from the single cell hold-out split, use the same formulas, and are not averaged. "Positive rows" are the rows with label 1 (an RLF follows within the horizon), and "normal rows" are the rows with label 0.
 
 | Metric | What it measures | How it is calculated | Better |
 | --- | --- | --- | --- |
@@ -717,9 +717,15 @@ All metrics are computed on the **test rows only** of each split. The first six 
 | `median_lead_s` | How much warning the alerts give: the time between the first alert and the failure, for the events that were caught | For each caught event, the lead is the failure time minus the time of the **earliest** alert in the window before it. The metric is the median of these leads. It is at most the horizon, and it is NaN if no event is caught in the fold | Longer, up to the horizon |
 | `alert_episodes_per_ue_hour` | The alert workload: how many separate alert bursts a UE produces per hour, counting true and false alerts together. It shows how many alarms an operator would see | For each UE, sort its alert times and merge alerts that are within one `horizon` of each other: the episodes are 1 plus the number of gaps larger than the horizon. Sum the episodes over UEs and divide by the test rows divided by 3,600 (the UE-hours) | Lower |
 | `infer_us_per_sample` | The cost of scoring: microseconds per row | Wall-clock time of the model's `score` call on the test rows (`time.perf_counter`) divided by the number of rows, times 1,000,000. It excludes the cost of computing the features, and it varies from run to run with the machine's load | Lower |
-| `cell_holdout_pr_auc` | How well the model ranks failures on **cells it never saw in training**: the generalization of the model to new cells | The same `average_precision_score`, computed on the cell hold-out split (train on about 75% of the cells in the early period, test on the other 25% in the later period). MLflow also logs the other metrics of this split with the prefix `cell_holdout_`; the terminal table shows only this one | Higher |
+| `cell_holdout_pr_auc` | How well the model ranks failures on **cells it never saw in training**: the generalization of the model to new cells. The only hold-out metric in the terminal table | The same `average_precision_score` as `pr_auc`, computed on the cell hold-out split (train on about 75% of the cells in the early period, test on the other 25% in the later period) | Higher |
+| `cell_holdout_recall_at_1pct_fpr` | The share of pre-failure rows flagged on unseen cells at the fixed false-alarm budget | The same calculation as `recall_at_1pct_fpr`; the threshold is the 99th percentile of the **hold-out cells' own** normal rows | Higher |
+| `cell_holdout_event_recall` | The share of RLF events on unseen cells that get at least one alert in the horizon before them | The same calculation as `event_recall`, on the hold-out rows | Higher |
+| `cell_holdout_median_lead_s` | The warning time on unseen cells, for the events that were caught | The same calculation as `median_lead_s`, on the hold-out rows; NaN (and not logged) if no event is caught | Longer, up to the horizon |
+| `cell_holdout_alert_episodes_per_ue_hour` | The alert workload on unseen cells | The same calculation as `alert_episodes_per_ue_hour`, on the hold-out rows | Lower |
 
-**Which metrics depend on `TARGET_FPR`:** `recall_at_1pct_fpr`, `event_recall`, `median_lead_s` and `alert_episodes_per_ue_hour` all use the alert threshold, so they change when `TARGET_FPR` changes. `pr_auc`, `cell_holdout_pr_auc` and `infer_us_per_sample` do not.
+The `cell_holdout_*` metrics are logged to MLflow only; the terminal table shows just `cell_holdout_pr_auc`. There is no `cell_holdout_infer_us_per_sample`, because inference time is measured only in the time folds. Compare each `cell_holdout_*` value with its time-fold counterpart: a big drop on unseen cells means the model depends on cell-specific patterns.
+
+**Which metrics depend on `TARGET_FPR`:** `recall_at_1pct_fpr`, `event_recall`, `median_lead_s` and `alert_episodes_per_ue_hour`, and their `cell_holdout_*` versions, all use the alert threshold, so they change when `TARGET_FPR` changes. `pr_auc`, `cell_holdout_pr_auc` and `infer_us_per_sample` do not.
 
 The column name `recall_at_1pct_fpr` is fixed in the code and matches the current `TARGET_FPR = 0.01`. If `TARGET_FPR` is changed (for example to 0.02), the name stays the same but the value then refers to the new rate.
 
