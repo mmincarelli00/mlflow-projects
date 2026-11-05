@@ -951,8 +951,26 @@ After two trees the normal rows 1 to 4 are low and the positive rows 7 and 8 are
 
 **Characteristics of the family.** XGBoost ("eXtreme Gradient Boosting") is an optimized, regularized implementation of gradient boosting with trees, the same family as HistGradientBoosting.
 
+**XGBoost versus HistGradientBoosting.** The two are the same algorithm family, but they differ in some implementation choices and in how this project configures them (settings from `RLF_train.py`).
+
+| Aspect | HistGradientBoosting | XGBoost |
+| --- | --- | --- |
+| Library | scikit-learn | separate `xgboost` package |
+| Tree growth | **Leaf-wise**: always splits the leaf with the biggest gain, up to 31 leaves and depth 6 | **Depth-wise**: splits level by level down to depth 6, up to 64 leaves |
+| Split search | 255 quantile bins per feature (plus one for missing values) | Histogram bins as well in recent versions (256 by default) |
+| Rows and features per tree | All of them | Random 80% of the rows (`subsample`) and 80% of the features (`colsample_bytree`) |
+| Class imbalance | `class_weight="balanced"`: full rebalancing | `scale_pos_weight = sqrt(neg/pos)`: partial rebalancing |
+| Early stopping | On automatically (10% held out, 10 rounds), so **fewer than 300 trees may be kept** | None, **all 300 trees are kept** |
+| Regularization | `l2_regularization=0`, `min_samples_leaf=20` | `reg_lambda=1`, `min_child_weight=1`, `gamma=0` |
+| Feature importances | None out of the box | Yes, top 15 saved to `feature_importance_top15.json` |
+| Randomness | Only in the early-stopping split and the bin sampling | Also from the row and feature sampling |
+| Speed in these tests | Slower | About 3x faster at the 5 s horizon, 7 to 8x at 30 s |
+
+- **What is the same:** both fit trees to the gradient and hessian of the log-loss and add them with a learning rate of 0.05, with up to 300 rounds, depth 6 and the same seed. Both score with `p = sigmoid(F0 + sum of the tree outputs)` from `predict_proba(X)[:, 1]`, use all 105 features with no scaling, and handle missing values natively. Their accuracy is nearly identical in these tests.
+- **Practical effect:** the differences in imbalance handling, subsampling and early stopping mean the two models are not exact clones even with the same headline hyperparameters, which is partly why running both is informative. XGBoost is faster and gives importances. HistGradientBoosting has fewer dependencies, because it ships with scikit-learn.
+
 - **Supervised, on all 105 features,** with the same strengths as HistGradientBoosting: non-linear effects and interactions, no scaling, native handling of missing values.
-- **Second-order learning:** it uses both the gradient and the curvature (hessian) of the loss to choose splits and leaf values, with built-in regularization.
+- **Explicit regularization:** its split gain and leaf values include L2 (`reg_lambda`) and minimum-gain (`gamma`) terms, so splits and leaf values are penalized and overfitting is reduced. Like HistGradientBoosting, it uses both the gradient and the curvature (hessian) of the loss.
 - **Randomization per tree:** each tree sees a random 80% of the rows and 80% of the features, which reduces overfitting.
 - **Feature importances:** it provides them, and the project saves the top 15 as `feature_importance_top15.json`.
 - **Limits:** same as for HistGradientBoosting. It needs labels and scores each row independently.
@@ -983,8 +1001,6 @@ After two trees the normal rows 1 to 4 are low and the positive rows 7 and 8 are
 - **Learned:** the trees (split feature, threshold and leaf value of each node) and the importances saved as `feature_importance_top15.json`.
 
 **How the scoring works.** As for HistGradientBoosting: `p = sigmoid(F0 + 0.05 x sum of the tree outputs)`, returned by `predict_proba(X)[:, 1]`. It is a score between 0 and 1, not a calibrated probability (because of `scale_pos_weight`), and only the ranking of rows matters.
-
-**XGBoost versus HistGradientBoosting:** the same algorithm family with near-identical accuracy in these tests. XGBoost scores about 3x faster at the 5 s horizon and 7 to 8x faster at 30 s, and gives feature importances.
 
 ### GRU
 
