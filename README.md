@@ -912,7 +912,18 @@ HistGradientBoosting provides no importance score for the used features. That is
 
 **How the scoring works.**
 
-- **Score:** add the leaf values of the row's leaf in each tree to F0, scaled by the learning rate, and pass the sum through a sigmoid: `p = sigmoid(F0 + 0.05 x sum of the tree outputs)`. `predict_proba(X)[:, 1]` returns this `p`.
+- **Score:** scoring uses the trees already trained and learns nothing. For one UE-second row:
+  1. **Bin the row.** Each of the 105 feature values is mapped to its bin number, using the bin edges (the boundaries between neighbouring bins) saved during training.
+  2. **Walk each tree.** Start at the root and follow the splits ("bin of `dl_bler_mean_5s` <= k?") until a leaf. Each leaf holds a number, its leaf value, which already includes the learning rate of 0.05.
+  3. **Add up.** The score is the starting value F0 plus the leaf values from all the trees that were kept: up to 300, or fewer if early stopping ended training sooner.
+  4. **Apply the sigmoid.** `p = sigmoid(F0 + sum of the leaf values)`, a number between 0 and 1.
+  5. **Return `p`.** `predict_proba(X)[:, 1]` gives the probability of class 1, "an RLF in the next `horizon` seconds". The code takes that column as the score.
+- **Example, continuing the worked example below:** a new row with `dl_bler_mean_5s` = 0.10 lands in the right leaf of tree 1 (0.10 is above 0.055, **+0.80**) and in the left leaf of tree 2 (0.10 is not above 0.105, **-0.43**). The score is -0.511 + 0.80 - 0.43 = **-0.14**, so p = sigmoid(-0.14) = **0.465**, the same as rows 5 and 6, which fall into the same leaves.
+- **Things to know:**
+  - **Each row is scored on its own,** from its 105 feature values. Recent history reaches the model only through the engineered window features.
+  - **Class weights are not part of scoring.** `class_weight="balanced"` changes how the trees are trained, not this formula. It does push the probabilities up, so `p` is a score, not a calibrated probability.
+  - **What happens next:** the evaluation takes these scores and sets the alert threshold at the 99th percentile of the normal rows' scores (`TARGET_FPR`). A row with a higher score raises an alert.
+  - **Cost:** scoring is just walking up to 300 trees of depth at most 6, so it is fast. This is what the `infer_us_per_sample` metric measures.
 - **Output used by the evaluation:** one number per UE-second row, between 0 and 1, interpreted as the predicted probability of an RLF within the horizon. Because of the class weights it is **not a calibrated probability** (it overestimates the true rate), but only the ranking of rows matters here. The alert threshold is the 99th percentile of the normal rows' scores (`TARGET_FPR`).
 
 **A simple worked example.** 8 rows and one feature, `dl_bler_mean_5s`. The numbers were checked against scikit-learn's `HistGradientBoostingClassifier` (same predictions to 3 decimals). To keep it readable: one-split trees (`max_depth=1`), `learning_rate=0.5` instead of 0.05, no class weights, no early stopping, and no binning (with 8 distinct values, the bins are the values themselves).
