@@ -875,7 +875,7 @@ For the slope features, the first `w` seconds of each UE have no value `w` secon
   - **Interactions:** the second split in a tree happens inside the branch chosen by the first, so the effect of one feature can depend on another. For example, a stronger neighbor cell (`nb_gap > 0`) may be harmless on its own, but together with a high `dl_bler_mean_5s` and a falling SINR it signals a likely failure. With `max_depth=6`, a path can combine up to 6 features, and 300 trees add many such combinations. The robust z-score, which looks at each feature separately and keeps the maximum, cannot see these combinations.
 - **Fast on large tables:** feature values are grouped into at most 255 bins, so finding a split compares bin edges, not every distinct value.
 - **Handles missing values natively,** with no imputation needed.
-- **Limits:** it scores each row independently from its own 105 feature values (the window features already summarize recent seconds), and it needs labels, so it can only learn failure patterns present in the training data. It gives no feature importances out of the box, so this project saves no importance artifact for it.
+- **Limits:** it scores each row independently from its own 105 feature values (the window features already summarize recent seconds), and it needs labels, so it can only learn failure patterns present in the training data. It does not provide feature importances (a report computed after training, which XGBoost does offer), so this project saves no importance file for it. This has no effect on its training or scoring.
 
 **Feature importance** is a score for how much each input feature contributes to the model’s predictions. For this project it would answer “which of the 105 features does the model rely on most to detect a coming RLF?” For example, it could show that sinr_slope_5s, dl_bler_mean_5s and nb_gap are at the top, and that most of the other features hardly matter. 
 HistGradientBoosting provides no importance score for the used features. That is what “out of the box” means: the model does not provide it by itself.
@@ -962,7 +962,7 @@ After two trees the normal rows 1 to 4 are low and the positive rows 7 and 8 are
 | Class imbalance | `class_weight="balanced"`: full rebalancing | `scale_pos_weight = sqrt(neg/pos)`: partial rebalancing |
 | Early stopping | On automatically (10% held out, 10 rounds), so **fewer than 300 trees may be kept** | None, **all 300 trees are kept** |
 | Regularization | `l2_regularization=0`, `min_samples_leaf=20` | `reg_lambda=1`, `min_child_weight=1`, `gamma=0` |
-| Feature importances | None out of the box | Yes, top 15 saved to `feature_importance_top15.json` |
+| Feature importances (a report computed **after** training; not used by the training itself, by the scoring or by the metrics) | The model does not provide them, so the project saves no importance file | The model provides a score for each of the 105 features, and the project saves the 15 highest to `feature_importance_top15.json`, for inspection only |
 | Randomness | Only in the early-stopping split and the bin sampling | Also from the row and feature sampling |
 | Speed in these tests | Slower | About 3x faster at the 5 s horizon, 7 to 8x at 30 s |
 
@@ -972,7 +972,7 @@ After two trees the normal rows 1 to 4 are low and the positive rows 7 and 8 are
 - **Supervised, on all 105 features,** with the same strengths as HistGradientBoosting: non-linear effects and interactions, no scaling, native handling of missing values.
 - **Explicit regularization:** its split gain and leaf values include L2 (`reg_lambda`) and minimum-gain (`gamma`) terms, so splits and leaf values are penalized and overfitting is reduced. Like HistGradientBoosting, it uses both the gradient and the curvature (hessian) of the loss.
 - **Randomization per tree:** each tree sees a random 80% of the rows and 80% of the features, which reduces overfitting.
-- **Feature importances:** it provides them, and the project saves the top 15 as `feature_importance_top15.json`.
+- **Feature importances:** after training, it can report how much each of the 105 features contributed to the loss reduction, and the project saves the 15 highest as `feature_importance_top15.json` (final model only). This is a report for inspection: it is **not used in the training** (all 105 features are still used), in the scoring or in the metrics.
 - **Limits:** same as for HistGradientBoosting. It needs labels and scores each row independently.
 
 ![How XGBoost learns: boosting loop, random subsample per tree, depth-wise growth and the split and leaf formulas](docs/xgboost.png)
