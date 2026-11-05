@@ -877,6 +877,9 @@ For the slope features, the first `w` seconds of each UE have no value `w` secon
 - **Handles missing values natively,** with no imputation needed.
 - **Limits:** it scores each row independently from its own 105 feature values (the window features already summarize recent seconds), and it needs labels, so it can only learn failure patterns present in the training data. It gives no feature importances out of the box, so this project saves no importance artifact for it.
 
+**Feature importance** is a score for how much each input feature contributes to the model’s predictions. For this project it would answer “which of the 105 features does the model rely on most to detect a coming RLF?” For example, it could show that sinr_slope_5s, dl_bler_mean_5s and nb_gap are at the top, and that most of the other features hardly matter. 
+HistGradientBoosting provides no importance score for the used features. That is what “out of the box” means: the model does not provide it by itself.
+
 ![How HistGradientBoosting learns: boosting loop, histogram bins, leaf-wise growth and early stopping](docs/histgradientboosting.png)
 
 **Library and functions.** **scikit-learn**'s `sklearn.ensemble.HistGradientBoostingClassifier`, wrapped by the `HISTGBM` class in `RLF_train.py`. The code calls `.fit(X, y)` to train and `predict_proba(X)[:, 1]` to score.
