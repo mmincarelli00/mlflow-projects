@@ -865,9 +865,16 @@ For the slope features, the first `w` seconds of each UE have no value `w` secon
 **Characteristics of the family.** Gradient boosting builds a strong classifier by adding many small decision trees one after the other. HistGradientBoosting is scikit-learn's histogram-based implementation. XGBoost (next section) is the same family. It is run here as a separate model.
 
 - **Supervised:** it learns from the labels, so it is trained on all the training rows, normal and positive, and it learns what a pre-failure row looks like, not just what is unusual.
-- **Works on all 105 features** with no scaling, and it captures non-linear effects and interactions between features through its trees.
+- **Works on all 105 features, with no scaling:** the features can be given to the model as they are, without normalizing or standardizing them first.
+  - **What "no scaling" means:** the features have very different units and ranges (`rsrp` around -90 dBm, `dl_bler` between 0 and 1, `harq_retx` a small count, `ta` in timing-advance units). Other models need them brought to a common scale first (the GRU is trained on standardized inputs), because they combine features with weights or distances, and a feature with a large range would dominate. A tree never combines features: each split compares **one** feature with a threshold, such as "is `dl_bler_mean_5s` above 0.12?". Rescaling or shifting a feature, or taking its log, only changes the threshold number, and the same rows go left and right.
+  - **Only the order of values matters,** not their size, so outliers and skewed distributions do not distort the model either.
+  - **It is not the bins that remove the need for scaling:** boosted trees were already scale-free before histogram binning. The bins (see "What are the 255 bins" below) only make split search fast.
+  - **It does not mean no preprocessing:** the engineered features (slopes, rolling means, `nb_gap`) are still computed in `RLF_features.py`, because they tell the trees about the recent trend of each KPI.
+- **Captures non-linear effects and interactions between features through its trees:**
+  - **Non-linear effects:** a tree splits a feature into regions with a different effect in each, so the risk can stay flat and then jump past a threshold (for example once `rsrp_slope_5s` falls below a certain value), instead of changing at a constant rate as in a linear model.
+  - **Interactions:** the second split in a tree happens inside the branch chosen by the first, so the effect of one feature can depend on another. For example, a stronger neighbor cell (`nb_gap > 0`) may be harmless on its own, but together with a high `dl_bler_mean_5s` and a falling SINR it signals a likely failure. With `max_depth=6`, a path can combine up to 6 features, and 300 trees add many such combinations. The robust z-score, which looks at each feature separately and keeps the maximum, cannot see these combinations.
 - **Fast on large tables:** feature values are grouped into at most 255 bins, so finding a split compares bin edges, not every distinct value.
-- **Robust defaults:** no feature scaling, and it handles missing values natively.
+- **Handles missing values natively,** with no imputation needed.
 - **Limits:** it scores each row independently from its own 105 feature values (the window features already summarize recent seconds), and it needs labels, so it can only learn failure patterns present in the training data. It gives no feature importances out of the box, so this project saves no importance artifact for it.
 
 ![How HistGradientBoosting learns: boosting loop, histogram bins, leaf-wise growth and early stopping](docs/histgradientboosting.png)
