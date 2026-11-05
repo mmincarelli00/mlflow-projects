@@ -1112,7 +1112,7 @@ On this synthetic data, supervised learning clearly beats the unsupervised metho
 **What the evidence supports**
 
 - Supervised models (boosting, GRU) beat the z-score and Isolation Forest on PR-AUC and on recall at a fixed false-alarm rate.
-- XGBoost and HistGradientBoosting are equivalent in accuracy; XGBoost is faster and provides feature importances.
+- XGBoost and HistGradientBoosting are equivalent in accuracy; XGBoost is faster and also offers a feature-importance report after training, for inspection (it plays no part in the training or the metrics).
 - A 30 s horizon gives roughly 15 to 18 s of lead time, against 4 to 6 s at a 5 s horizon, at the cost of lower lift over chance.
 - The GRU improves PR-AUC by about 0.03, but changes the alert-budget results by only 0.01 to 0.03 and scores about 7 to 17 times slower than XGBoost.
 
@@ -1192,7 +1192,7 @@ A pragmatic path is to start as an **advisory service on O1 and trace data**, th
 - **Fixed threshold.** The experiment sets the alert threshold from the test fold's own normal rows (an oracle). A product must fix the threshold in advance from a validation period and then monitor the false-alarm rate it actually produces.
 - **Alert budget.** The experiment reports about 7 alert episodes per UE-hour on synthetic data, which would be unusable in a NOC. In production, alert at cell or UE-group level, require persistence, and tune against an agreed budget of alerts per cell per day.
 - **Horizon by use case.** A 30 s horizon gives roughly 15 to 18 s of lead time in the tests; a 5 s horizon gives 4 to 6 s. Choose per action: a handover or parameter change needs more warning than a notification.
-- **Model choice.** XGBoost is the sensible default (fast, with feature importances). The GRU gained about 0.03 PR-AUC on synthetic data at higher compute cost and is a candidate only if the gain holds on real data.
+- **Model choice.** XGBoost is the sensible default (fast, and its post-training feature-importance report helps inspect the model). The GRU gained about 0.03 PR-AUC on synthetic data at higher compute cost and is a candidate only if the gain holds on real data.
 - **Cost.** Model scoring is cheap in the tests (about 2 to 3 µs per row for XGBoost, 17 to 44 µs for the GRU, varying with machine load). The cost of computing features per UE in a stream was not measured and will likely dominate.
 - **Explanations.** Show the top contributing KPIs with each alert so engineers can judge it.
 
