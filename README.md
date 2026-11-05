@@ -884,6 +884,13 @@ For the slope features, the first `w` seconds of each UE have no value `w` secon
 - **Scikit-learn defaults, not set in the code:** `max_leaf_nodes=31` (maximum leaves per tree), `min_samples_leaf=20` (minimum rows in a leaf), `l2_regularization=0`, `max_bins=255` (the histogram bins), the log-loss (cross-entropy) objective, and early stopping on (`early_stopping="auto"` turns it on for more than 10,000 rows) with `validation_fraction=0.1` and `n_iter_no_change=10`.
 - **Early stopping:** 10% of the training rows are held out at random, and boosting stops when their loss has not improved for 10 rounds, so **fewer than 300 trees may be kept**. Neighbouring seconds of the same UE are very similar, so this check is optimistic and may stop later than a time-based split would.
 
+**What are the 255 bins.** Before training any tree, scikit-learn turns each feature, separately, into at most 255 buckets (`max_bins=255`, a default not set in the code), and works on the bin numbers (0 to 254) instead of the raw values.
+
+- **How they are built:** if a feature has 255 or fewer distinct values, each value gets its own bin. Otherwise the bin edges are placed at **quantiles** of the training values (estimated on a random sample of up to 200,000 rows), so every bin holds roughly the same number of rows. Missing values get one extra bin. The edges are stored and reused to bin new rows at scoring time.
+- **Why:** to choose a split, the tree sums `g` and `h` per bin in one pass and scans at most 255 bin edges, instead of testing every distinct value. This is what makes it fast on large tables, and it means a split threshold is always a bin edge.
+- **Cost:** two values in the same bin cannot be separated by a split. With about 255 quantile bins this rarely matters.
+- **In this project:** continuous features (the KPI means, slopes and minimums) are quantile-binned, while count features such as `a3_count_5s` have as many bins as distinct values.
+
 **How the learning works.** Boosting is a loop that corrects the previous trees' errors.
 
 - **Start:** a constant score F0, the same for every row, set from the class balance of the training data (taking the class weights into account).
