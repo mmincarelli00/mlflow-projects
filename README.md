@@ -912,7 +912,7 @@ HistGradientBoosting provides no importance score for the used features. That is
 
 **How the scoring works.**
 
-- **Score:** scoring uses the trees already trained and learns nothing. For one UE-second row:
+- **Score:** one number per UE-second row, between 0 and 1, interpreted as the predicted probability of an RLF within the horizon. Because of the class weights it is **not a calibrated probability** (it overestimates the true rate), but only the ranking of rows matters here. The alert threshold is the 99th percentile of the normal rows' scores (`TARGET_FPR`). Scoring uses the trees already trained and learns nothing. For one UE-second row:
   1. **Bin the row.** Each of the 105 feature values is mapped to its bin number, using the bin edges (the boundaries between neighbouring bins) saved during training.
   2. **Walk each tree.** Start at the root and follow the splits ("bin of `dl_bler_mean_5s` <= k?") until a leaf. Each leaf holds a number, its leaf value, which already includes the learning rate of 0.05.
   3. **Add up.** The score is the starting value F0 plus the leaf values from all the trees that were kept: up to 300, or fewer if early stopping ended training sooner.
@@ -924,7 +924,6 @@ HistGradientBoosting provides no importance score for the used features. That is
   - **Class weights are not part of scoring.** `class_weight="balanced"` changes how the trees are trained, not this formula. It does push the probabilities up, so `p` is a score, not a calibrated probability.
   - **What happens next:** the evaluation takes these scores and sets the alert threshold at the 99th percentile of the normal rows' scores (`TARGET_FPR`). A row with a higher score raises an alert.
   - **Cost:** scoring is just walking up to 300 trees of depth at most 6, so it is fast. This is what the `infer_us_per_sample` metric measures.
-- **Output used by the evaluation:** one number per UE-second row, between 0 and 1, interpreted as the predicted probability of an RLF within the horizon. Because of the class weights it is **not a calibrated probability** (it overestimates the true rate), but only the ranking of rows matters here. The alert threshold is the 99th percentile of the normal rows' scores (`TARGET_FPR`).
 
 **A simple worked example.** 8 rows and one feature, `dl_bler_mean_5s`. The numbers were checked against scikit-learn's `HistGradientBoostingClassifier` (same predictions to 3 decimals). To keep it readable: one-split trees (`max_depth=1`), `learning_rate=0.5` instead of 0.05, no class weights, no early stopping, and no binning (with 8 distinct values, the bins are the values themselves).
 
