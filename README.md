@@ -898,6 +898,28 @@ For the slope features, the first `w` seconds of each UE have no value `w` secon
 - **Score:** add the leaf values of the row's leaf in each tree to F0, scaled by the learning rate, and pass the sum through a sigmoid: `p = sigmoid(F0 + 0.05 x sum of the tree outputs)`. `predict_proba(X)[:, 1]` returns this `p`.
 - **Output used by the evaluation:** one number per UE-second row, between 0 and 1, interpreted as the predicted probability of an RLF within the horizon. Because of the class weights it is **not a calibrated probability** (it overestimates the true rate), but only the ranking of rows matters here. The alert threshold is the 99th percentile of the normal rows' scores (`TARGET_FPR`).
 
+**A simple worked example.** 8 rows and one feature, `dl_bler_mean_5s`. The numbers were checked against scikit-learn's `HistGradientBoostingClassifier` (same predictions to 3 decimals). To keep it readable: one-split trees (`max_depth=1`), `learning_rate=0.5` instead of 0.05, no class weights, no early stopping, and no binning (with 8 distinct values, the bins are the values themselves).
+
+| Row | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `dl_bler_mean_5s` | 0.02 | 0.03 | 0.04 | 0.05 | 0.06 | 0.09 | 0.12 | 0.15 |
+| Label y (RLF ahead) | 0 | 0 | 0 | 0 | 1 | 0 | 1 | 1 |
+
+- **Start:** the base rate is 3/8 = 0.375, so every row gets the same score F0 = log(0.375 / 0.625) = -0.511, that is p = 0.375.
+- **Round 1, errors:** `g = p - y` is +0.375 for the normal rows and -0.625 for the positive rows, and `h = p(1 - p)` is 0.234 for every row.
+- **Round 1, split:** for each candidate threshold, `gain = G_L^2/H_L + G_R^2/H_R - G^2/H`, where `G` and `H` are the sums of `g` and `h` on each side. The threshold **0.055** wins (gain 4.80, against 4.44 for 0.105 and 2.88 for 0.045).
+- **Round 1, leaf values:** `-sum(g) / sum(h)` gives -1.60 for the left leaf (rows 1 to 4) and +1.60 for the right leaf (rows 5 to 8). Scaled by the learning rate 0.5, they are added to the scores: the left rows go to F = -1.31 (p = 0.21) and the right rows to F = +0.29 (p = 0.57).
+- **Round 2, errors:** row 6, a normal row now on the high side, has the largest error (+0.57), while rows 5, 7 and 8 have -0.43.
+- **Round 2, split:** the threshold **0.105** wins (gain 2.34): the second tree concentrates on what the first one got wrong. Its leaf values are -0.86 and +1.75, which become -0.43 and +0.87 after scaling.
+
+| Row | 1 to 4 | 5 | 6 | 7 and 8 |
+| --- | --- | --- | --- | --- |
+| p at start | 0.375 | 0.375 | 0.375 | 0.375 |
+| p after tree 1 | 0.212 | 0.572 | 0.572 | 0.572 |
+| p after tree 2 | 0.149 | 0.465 | 0.465 | 0.762 |
+
+After two trees the normal rows 1 to 4 are low and the positive rows 7 and 8 are high. Rows 5 and 6 are still in the middle, because one feature and two splits cannot separate them yet, and further rounds would keep correcting them. In the real run the same loop repeats up to 300 times, with trees of up to 31 leaves and depth 6, splits chosen among 105 features and 255 bins per feature, `class_weight="balanced"` weighting `g` and `h`, steps scaled by 0.05, and early stopping that may end the loop sooner.
+
 ### XGBoost
 
 **Characteristics of the family.** XGBoost ("eXtreme Gradient Boosting") is an optimized, regularized implementation of gradient boosting with trees, the same family as HistGradientBoosting.
