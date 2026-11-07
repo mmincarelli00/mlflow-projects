@@ -1013,6 +1013,8 @@ GRU is can be considered as a simplified version of STM (Long Short-Term Memory)
 - **Input:** 13 raw channels (the 10 KPIs `rsrp`, `rsrq`, `sinr`, `ul_sinr`, `cqi`, `dl_bler`, `harq_retx`, `ta`, `phr` and `a3_events`, plus `nb_gap`, `a3_margin` and `ho_cmd`). It does not see the 80 rolling features, because it is meant to learn its own temporal summaries from the raw KPIs.
 - **Training:** inputs are standardized with training-set statistics, and the best epoch is chosen on a validation slice taken from the end of the training period.
 
+![How the GRU learns: mini-batch and epoch loops, one window unrolled through the GRU, the gate equations and best-epoch selection on the validation slice](docs/gru.png)
+
 #### How the GRU reads its input: window, channels, batch and epoch
 
 The GRU is trained on blocks of shape `(batch, window, channels)`, for example (512 windows, 60 seconds, 13 signals).

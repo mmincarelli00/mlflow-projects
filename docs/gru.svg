@@ -1,0 +1,237 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" font-family="Helvetica, Arial, sans-serif">
+<defs><marker id="ar" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" refX="12" refY="7" orient="auto"><path d="M0,1 L13,7 L0,13 z" fill="#374151"/></marker><marker id="ar2" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" refX="12" refY="7" orient="auto"><path d="M0,1 L13,7 L0,13 z" fill="#6366f1"/></marker><marker id="ar3" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" refX="12" refY="7" orient="auto"><path d="M0,1 L13,7 L0,13 z" fill="#d97706"/></marker></defs>
+<rect width="1400" height="900" fill="#ffffff"/>
+<text x="700" y="40" font-size="26" font-weight="700" fill="#1f2937" text-anchor="middle">GRU: how it learns</text>
+<text x="40" y="66" font-size="17" font-weight="400" fill="#4b5563" text-anchor="start">Supervised sequence model: reads the last 60 s of 13 raw KPIs of one UE and outputs one score, trained with mini-batches over 12 epochs</text>
+<rect x="40" y="130" width="195" height="150" rx="10" fill="#eef2ff" stroke="#6366f1" stroke-width="2"/>
+<text x="52" y="157" font-size="16" font-weight="700" fill="#1f2937" text-anchor="start">1. Prepare</text>
+<text x="52" y="180" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">Standardize the 13</text>
+<text x="52" y="198" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">channels with the mean</text>
+<text x="52" y="216" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">and std of the training</text>
+<text x="52" y="234" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">rows. Hold out the last</text>
+<text x="52" y="252" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">15% of the training</text>
+<text x="52" y="270" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">period as validation.</text>
+<line x1="238" y1="205.0" x2="262" y2="205.0" stroke="#374151" stroke-width="2.5" marker-end="url(#ar)"/>
+<rect x="265" y="130" width="195" height="150" rx="10" fill="#eef2ff" stroke="#6366f1" stroke-width="2"/>
+<text x="277" y="157" font-size="16" font-weight="700" fill="#1f2937" text-anchor="start">2. Batch</text>
+<text x="277" y="180" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">Shuffle the training</text>
+<text x="277" y="198" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">windows and take the next</text>
+<text x="277" y="216" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">512: a tensor (512, 60,</text>
+<text x="277" y="234" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">13) = windows x seconds x</text>
+<text x="277" y="252" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">channels.</text>
+<line x1="463" y1="205.0" x2="487" y2="205.0" stroke="#374151" stroke-width="2.5" marker-end="url(#ar)"/>
+<rect x="490" y="130" width="195" height="150" rx="10" fill="#eef2ff" stroke="#6366f1" stroke-width="2"/>
+<text x="502" y="157" font-size="16" font-weight="700" fill="#1f2937" text-anchor="start">3. Forward</text>
+<text x="502" y="180" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">The GRU reads each window</text>
+<text x="502" y="198" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">second by second; its</text>
+<text x="502" y="216" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">last memory h (32 values)</text>
+<text x="502" y="234" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">goes through a linear</text>
+<text x="502" y="252" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">layer to 1 logit.</text>
+<line x1="688" y1="205.0" x2="712" y2="205.0" stroke="#374151" stroke-width="2.5" marker-end="url(#ar)"/>
+<rect x="715" y="130" width="195" height="150" rx="10" fill="#eef2ff" stroke="#6366f1" stroke-width="2"/>
+<text x="727" y="157" font-size="16" font-weight="700" fill="#1f2937" text-anchor="start">4. Loss and update</text>
+<text x="727" y="180" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">BCE loss, positives</text>
+<text x="727" y="198" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">weighted sqrt(neg/pos).</text>
+<text x="727" y="216" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">Backprop, clip gradient</text>
+<text x="727" y="234" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">norm at 1.0, AdamW step</text>
+<text x="727" y="252" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">(lr 0.002).</text>
+<line x1="913" y1="205.0" x2="937" y2="205.0" stroke="#374151" stroke-width="2.5" marker-end="url(#ar)"/>
+<rect x="940" y="130" width="195" height="150" rx="10" fill="#eef2ff" stroke="#6366f1" stroke-width="2"/>
+<text x="952" y="157" font-size="16" font-weight="700" fill="#1f2937" text-anchor="start">5. End of epoch</text>
+<text x="952" y="180" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">Score the validation</text>
+<text x="952" y="198" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">slice. If its PR-AUC is</text>
+<text x="952" y="216" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">the best so far, save a</text>
+<text x="952" y="234" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">copy of the weights.</text>
+<line x1="1138" y1="205.0" x2="1162" y2="205.0" stroke="#374151" stroke-width="2.5" marker-end="url(#ar)"/>
+<rect x="1165" y="130" width="195" height="150" rx="10" fill="#ecfdf5" stroke="#10b981" stroke-width="2"/>
+<text x="1177" y="157" font-size="16" font-weight="700" fill="#1f2937" text-anchor="start">6. Result</text>
+<text x="1177" y="180" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">Reload the weights of the</text>
+<text x="1177" y="198" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">best epoch. Score =</text>
+<text x="1177" y="216" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">sigmoid(logit), between 0</text>
+<text x="1177" y="234" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">and 1.</text>
+<path d="M812.5,130 L812.5,103 L362.5,103 L362.5,126" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-dasharray="8,5" marker-end="url(#ar2)"/>
+<text x="587.5" y="96" font-size="14" font-weight="700" fill="#6366f1" text-anchor="middle">repeat for every batch: ~180 iterations (one weight update each) = 1 epoch</text>
+<path d="M1037.5,280 L1037.5,308 L362.5,308 L362.5,284" fill="none" stroke="#d97706" stroke-width="2.5" stroke-dasharray="8,5" marker-end="url(#ar3)"/>
+<text x="700.0" y="328" font-size="14" font-weight="700" fill="#d97706" text-anchor="middle">repeat for 12 epochs (each epoch reshuffles all ~92,000 training windows)</text>
+<text x="40" y="352" font-size="20" font-weight="700" fill="#1f2937" text-anchor="start">One training sample: a window through the GRU</text>
+<rect x="40" y="368" width="730" height="502" rx="0" fill="#f9fafb" stroke="#d1d5db" stroke-width="1.5"/>
+<text x="60" y="396" font-size="15" font-weight="700" fill="#1f2937" text-anchor="start">a) Example: t = 100, window 60 s, horizon 30 s</text>
+<rect x="142.04545454545456" y="422" width="354.5454545454545" height="26" rx="3" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="319.3181818181818" y="440" font-size="13" font-weight="700" fill="#2563eb" text-anchor="middle">input: seconds 41 to 100 (60 s of raw KPIs)</text>
+<rect x="496.59090909090907" y="422" width="177.2727272727273" height="26" rx="3" fill="#fee2e2" stroke="#dc2626" stroke-width="1.5"/>
+<text x="585.2272727272727" y="440" font-size="13" font-weight="700" fill="#dc2626" text-anchor="middle">label y</text>
+<line x1="80" y1="462" x2="730" y2="462" stroke="#6b7280" stroke-width="1.5"/>
+<line x1="80.0" y1="458" x2="80.0" y2="466" stroke="#6b7280" stroke-width="1.5"/>
+<text x="80.0" y="482" font-size="11" font-weight="400" fill="#4b5563" text-anchor="middle">30</text>
+<line x1="139.0909090909091" y1="458" x2="139.0909090909091" y2="466" stroke="#6b7280" stroke-width="1.5"/>
+<text x="139.0909090909091" y="482" font-size="11" font-weight="400" fill="#4b5563" text-anchor="middle">40</text>
+<line x1="198.1818181818182" y1="458" x2="198.1818181818182" y2="466" stroke="#6b7280" stroke-width="1.5"/>
+<text x="198.1818181818182" y="482" font-size="11" font-weight="400" fill="#4b5563" text-anchor="middle">50</text>
+<line x1="257.27272727272725" y1="458" x2="257.27272727272725" y2="466" stroke="#6b7280" stroke-width="1.5"/>
+<text x="257.27272727272725" y="482" font-size="11" font-weight="400" fill="#4b5563" text-anchor="middle">60</text>
+<line x1="316.3636363636364" y1="458" x2="316.3636363636364" y2="466" stroke="#6b7280" stroke-width="1.5"/>
+<text x="316.3636363636364" y="482" font-size="11" font-weight="400" fill="#4b5563" text-anchor="middle">70</text>
+<line x1="375.45454545454544" y1="458" x2="375.45454545454544" y2="466" stroke="#6b7280" stroke-width="1.5"/>
+<text x="375.45454545454544" y="482" font-size="11" font-weight="400" fill="#4b5563" text-anchor="middle">80</text>
+<line x1="434.5454545454545" y1="458" x2="434.5454545454545" y2="466" stroke="#6b7280" stroke-width="1.5"/>
+<text x="434.5454545454545" y="482" font-size="11" font-weight="400" fill="#4b5563" text-anchor="middle">90</text>
+<line x1="493.6363636363636" y1="458" x2="493.6363636363636" y2="466" stroke="#6b7280" stroke-width="1.5"/>
+<text x="493.6363636363636" y="482" font-size="11" font-weight="400" fill="#4b5563" text-anchor="middle">100</text>
+<line x1="552.7272727272727" y1="458" x2="552.7272727272727" y2="466" stroke="#6b7280" stroke-width="1.5"/>
+<text x="552.7272727272727" y="482" font-size="11" font-weight="400" fill="#4b5563" text-anchor="middle">110</text>
+<line x1="611.8181818181819" y1="458" x2="611.8181818181819" y2="466" stroke="#6b7280" stroke-width="1.5"/>
+<text x="611.8181818181819" y="482" font-size="11" font-weight="400" fill="#4b5563" text-anchor="middle">120</text>
+<line x1="670.9090909090909" y1="458" x2="670.9090909090909" y2="466" stroke="#6b7280" stroke-width="1.5"/>
+<text x="670.9090909090909" y="482" font-size="11" font-weight="400" fill="#4b5563" text-anchor="middle">130</text>
+<line x1="730.0" y1="458" x2="730.0" y2="466" stroke="#6b7280" stroke-width="1.5"/>
+<text x="730.0" y="482" font-size="11" font-weight="400" fill="#4b5563" text-anchor="middle">140</text>
+<line x1="496.59090909090907" y1="414" x2="496.59090909090907" y2="466" stroke="#1f2937" stroke-width="2" stroke-dasharray="4,3"/>
+<text x="496.59090909090907" y="410" font-size="12" font-weight="700" fill="#1f2937" text-anchor="middle">now (t = 100)</text>
+<text x="60" y="506" font-size="13" font-weight="400" fill="#4b5563" text-anchor="start">y = 1 if an RLF occurs in seconds 101 to 130, else 0. The window only reads the past; the label only looks ahead.</text>
+<text x="60" y="556" font-size="15" font-weight="700" fill="#1f2937" text-anchor="start">b) The GRU unrolled over the 60 seconds of the window</text>
+<text x="62" y="616.0" font-size="13" font-weight="700" fill="#1f2937" text-anchor="start">h = 0</text>
+<line x1="104" y1="611.0" x2="123" y2="611.0" stroke="#374151" stroke-width="2.5" marker-end="url(#ar)"/>
+<rect x="125" y="588" width="66" height="46" rx="8" fill="#eef2ff" stroke="#6366f1" stroke-width="2"/>
+<text x="158.0" y="616.0" font-size="14" font-weight="700" fill="#6366f1" text-anchor="middle">GRU</text>
+<rect x="154.5" y="668" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="154.5" y="676" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="154.5" y="684" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="154.5" y="692" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="154.5" y="700" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="154.5" y="708" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="154.5" y="716" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="154.5" y="724" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="154.5" y="732" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="154.5" y="740" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="154.5" y="748" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="154.5" y="756" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="154.5" y="764" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<line x1="158.0" y1="665" x2="158.0" y2="638" stroke="#374151" stroke-width="2" marker-end="url(#ar)"/>
+<text x="170.0" y="724" font-size="13" font-weight="700" fill="#2563eb" text-anchor="start">x₄₁</text>
+<line x1="193" y1="611.0" x2="218" y2="611.0" stroke="#374151" stroke-width="2.5" marker-end="url(#ar)"/>
+<text x="205.5" y="601.0" font-size="12" font-weight="700" fill="#4b5563" text-anchor="middle">h</text>
+<rect x="220" y="588" width="66" height="46" rx="8" fill="#eef2ff" stroke="#6366f1" stroke-width="2"/>
+<text x="253.0" y="616.0" font-size="14" font-weight="700" fill="#6366f1" text-anchor="middle">GRU</text>
+<rect x="249.5" y="668" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="249.5" y="676" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="249.5" y="684" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="249.5" y="692" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="249.5" y="700" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="249.5" y="708" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="249.5" y="716" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="249.5" y="724" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="249.5" y="732" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="249.5" y="740" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="249.5" y="748" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="249.5" y="756" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="249.5" y="764" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<line x1="253.0" y1="665" x2="253.0" y2="638" stroke="#374151" stroke-width="2" marker-end="url(#ar)"/>
+<text x="265.0" y="724" font-size="13" font-weight="700" fill="#2563eb" text-anchor="start">x₄₂</text>
+<line x1="288" y1="611.0" x2="313" y2="611.0" stroke="#374151" stroke-width="2.5" marker-end="url(#ar)"/>
+<text x="300.5" y="601.0" font-size="12" font-weight="700" fill="#4b5563" text-anchor="middle">h</text>
+<rect x="315" y="588" width="66" height="46" rx="8" fill="#eef2ff" stroke="#6366f1" stroke-width="2"/>
+<text x="348.0" y="616.0" font-size="14" font-weight="700" fill="#6366f1" text-anchor="middle">GRU</text>
+<rect x="344.5" y="668" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="344.5" y="676" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="344.5" y="684" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="344.5" y="692" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="344.5" y="700" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="344.5" y="708" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="344.5" y="716" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="344.5" y="724" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="344.5" y="732" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="344.5" y="740" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="344.5" y="748" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="344.5" y="756" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="344.5" y="764" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<line x1="348.0" y1="665" x2="348.0" y2="638" stroke="#374151" stroke-width="2" marker-end="url(#ar)"/>
+<text x="360.0" y="724" font-size="13" font-weight="700" fill="#2563eb" text-anchor="start">x₄₃</text>
+<line x1="383" y1="611.0" x2="403" y2="611.0" stroke="#374151" stroke-width="2.5"/>
+<text x="415.5" y="616.0" font-size="18" font-weight="700" fill="#1f2937" text-anchor="middle">...</text>
+<line x1="428" y1="611.0" x2="448" y2="611.0" stroke="#374151" stroke-width="2.5" marker-end="url(#ar)"/>
+<text x="415.5" y="601.0" font-size="12" font-weight="700" fill="#4b5563" text-anchor="middle">h</text>
+<rect x="450" y="588" width="66" height="46" rx="8" fill="#eef2ff" stroke="#6366f1" stroke-width="2"/>
+<text x="483.0" y="616.0" font-size="14" font-weight="700" fill="#6366f1" text-anchor="middle">GRU</text>
+<rect x="479.5" y="668" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="479.5" y="676" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="479.5" y="684" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="479.5" y="692" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="479.5" y="700" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="479.5" y="708" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="479.5" y="716" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="479.5" y="724" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="479.5" y="732" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="479.5" y="740" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="479.5" y="748" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="479.5" y="756" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<rect x="479.5" y="764" width="7" height="7" fill="#93c5fd" stroke="#2563eb" stroke-width="0.8"/>
+<line x1="483.0" y1="665" x2="483.0" y2="638" stroke="#374151" stroke-width="2" marker-end="url(#ar)"/>
+<text x="495.0" y="724" font-size="13" font-weight="700" fill="#2563eb" text-anchor="start">x₁₀₀</text>
+<text x="70" y="786" font-size="12" font-weight="400" fill="#4b5563" text-anchor="start">13 channels per second, standardized</text>
+<text x="70" y="802" font-size="12" font-weight="400" fill="#4b5563" text-anchor="start">(rsrp, rsrq, sinr, ..., a3_margin, ho_cmd)</text>
+<line x1="518" y1="611.0" x2="598" y2="611.0" stroke="#374151" stroke-width="2.5" marker-end="url(#ar)"/>
+<text x="558.0" y="631.0" font-size="12" font-weight="700" fill="#4b5563" text-anchor="middle">last h (32)</text>
+<rect x="600" y="588" width="140" height="46" rx="8" fill="#ffffff" stroke="#374151" stroke-width="2"/>
+<text x="670" y="608" font-size="13" font-weight="700" fill="#1f2937" text-anchor="middle">Linear 32 → 1</text>
+<text x="670" y="625" font-size="13" font-weight="400" fill="#1f2937" text-anchor="middle">= logit</text>
+<line x1="670" y1="636" x2="670" y2="671" stroke="#374151" stroke-width="2.5" marker-end="url(#ar)"/>
+<rect x="580" y="674" width="180" height="64" rx="8" fill="#fff7ed" stroke="#d97706" stroke-width="2"/>
+<text x="670" y="696" font-size="13" font-weight="700" fill="#1f2937" text-anchor="middle">loss = BCE(logit, y)</text>
+<text x="670" y="714" font-size="12" font-weight="400" fill="#1f2937" text-anchor="middle">y = 1 weighted x sqrt(neg/pos)</text>
+<text x="670" y="730" font-size="12" font-weight="400" fill="#1f2937" text-anchor="middle">→ gradients → AdamW</text>
+<text x="60" y="836" font-size="13" font-weight="400" fill="#4b5563" text-anchor="start">The memory h starts at 0 for every window and is updated 60 times with the same weights; only the last h is used.</text>
+<text x="60" y="854" font-size="13" font-weight="400" fill="#4b5563" text-anchor="start">At scoring time the same path gives p = sigmoid(logit), without the loss.</text>
+<text x="800" y="352" font-size="20" font-weight="700" fill="#1f2937" text-anchor="start">What happens inside</text>
+<rect x="800" y="368" width="560" height="502" rx="0" fill="#f9fafb" stroke="#d1d5db" stroke-width="1.5"/>
+<text x="820" y="396" font-size="15" font-weight="700" fill="#1f2937" text-anchor="start">c) One GRU step (PyTorch nn.GRU, hidden size 32)</text>
+<text x="820" y="424" font-size="14" font-weight="400" fill="#1f2937" text-anchor="start">z = σ(W_z x + U_z h + b_z)</text>
+<text x="1340" y="424" font-size="13" font-weight="700" fill="#6366f1" text-anchor="end">update gate</text>
+<text x="820" y="448" font-size="14" font-weight="400" fill="#1f2937" text-anchor="start">r = σ(W_r x + U_r h + b_r)</text>
+<text x="1340" y="448" font-size="13" font-weight="700" fill="#6366f1" text-anchor="end">reset gate</text>
+<text x="820" y="472" font-size="14" font-weight="400" fill="#1f2937" text-anchor="start">n = tanh(W_n x + b_n + r ⊙ (U_n h + b'_n))</text>
+<text x="1340" y="472" font-size="13" font-weight="700" fill="#6366f1" text-anchor="end">candidate memory</text>
+<text x="820" y="496" font-size="14" font-weight="400" fill="#1f2937" text-anchor="start">h ← (1 - z) ⊙ n + z ⊙ h</text>
+<text x="1340" y="496" font-size="13" font-weight="700" fill="#6366f1" text-anchor="end">new memory</text>
+<text x="820" y="526" font-size="13" font-weight="400" fill="#4b5563" text-anchor="start">z close to 1 keeps the old memory; z close to 0 replaces it with n.</text>
+<text x="820" y="546" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">Weights: W 3 x 32 x 13 = 1,248; U 3 x 32 x 32 = 3,072; biases 192;</text>
+<text x="820" y="564" font-size="13" font-weight="400" fill="#1f2937" text-anchor="start">linear layer 33. Total 4,545, shared by all 60 steps.</text>
+<text x="820" y="604" font-size="15" font-weight="700" fill="#1f2937" text-anchor="start">d) Choosing the epoch on the validation slice (illustrative)</text>
+<rect x="870" y="630" width="460" height="170" fill="#ffffff" stroke="#d1d5db" stroke-width="1"/>
+<line x1="870" y1="781.1111111111112" x2="1330" y2="781.1111111111112" stroke="#e5e7eb" stroke-width="1"/>
+<text x="862" y="785.1111111111112" font-size="11" font-weight="400" fill="#4b5563" text-anchor="end">0.30</text>
+<line x1="870" y1="733.8888888888889" x2="1330" y2="733.8888888888889" stroke="#e5e7eb" stroke-width="1"/>
+<text x="862" y="737.8888888888889" font-size="11" font-weight="400" fill="#4b5563" text-anchor="end">0.35</text>
+<line x1="870" y1="686.6666666666666" x2="1330" y2="686.6666666666666" stroke="#e5e7eb" stroke-width="1"/>
+<text x="862" y="690.6666666666666" font-size="11" font-weight="400" fill="#4b5563" text-anchor="end">0.40</text>
+<line x1="870" y1="639.4444444444445" x2="1330" y2="639.4444444444445" stroke="#e5e7eb" stroke-width="1"/>
+<text x="862" y="643.4444444444445" font-size="11" font-weight="400" fill="#4b5563" text-anchor="end">0.45</text>
+<text x="870.0" y="816" font-size="11" font-weight="400" fill="#4b5563" text-anchor="middle">1</text>
+<text x="911.8181818181819" y="816" font-size="11" font-weight="400" fill="#4b5563" text-anchor="middle">2</text>
+<text x="953.6363636363636" y="816" font-size="11" font-weight="400" fill="#4b5563" text-anchor="middle">3</text>
+<text x="995.4545454545455" y="816" font-size="11" font-weight="400" fill="#4b5563" text-anchor="middle">4</text>
+<text x="1037.2727272727273" y="816" font-size="11" font-weight="400" fill="#4b5563" text-anchor="middle">5</text>
+<text x="1079.090909090909" y="816" font-size="11" font-weight="400" fill="#4b5563" text-anchor="middle">6</text>
+<text x="1120.909090909091" y="816" font-size="11" font-weight="400" fill="#4b5563" text-anchor="middle">7</text>
+<text x="1162.7272727272727" y="816" font-size="11" font-weight="400" fill="#4b5563" text-anchor="middle">8</text>
+<text x="1204.5454545454545" y="816" font-size="11" font-weight="400" fill="#4b5563" text-anchor="middle">9</text>
+<text x="1246.3636363636365" y="816" font-size="11" font-weight="400" fill="#4b5563" text-anchor="middle">10</text>
+<text x="1288.1818181818182" y="816" font-size="11" font-weight="400" fill="#4b5563" text-anchor="middle">11</text>
+<text x="1330.0" y="816" font-size="11" font-weight="400" fill="#4b5563" text-anchor="middle">12</text>
+<text x="1100.0" y="834" font-size="12" font-weight="400" fill="#4b5563" text-anchor="middle">epoch</text>
+<text x="822" y="715.0" font-size="12" fill="#4b5563" text-anchor="middle" transform="rotate(-90 822 715.0)">validation PR-AUC</text>
+<polyline points="870.0,781.1 911.8,724.4 953.6,696.1 995.5,677.2 1037.3,667.8 1079.1,660.2 1120.9,655.5 1162.7,647.9 1204.5,651.7 1246.4,656.4 1288.2,652.7 1330.0,658.3" fill="none" stroke="#6366f1" stroke-width="2.5"/>
+<circle cx="870.0" cy="781.1" r="3.5" fill="#6366f1" stroke="#ffffff" stroke-width="1.5"/>
+<circle cx="911.8" cy="724.4" r="3.5" fill="#6366f1" stroke="#ffffff" stroke-width="1.5"/>
+<circle cx="953.6" cy="696.1" r="3.5" fill="#6366f1" stroke="#ffffff" stroke-width="1.5"/>
+<circle cx="995.5" cy="677.2" r="3.5" fill="#6366f1" stroke="#ffffff" stroke-width="1.5"/>
+<circle cx="1037.3" cy="667.8" r="3.5" fill="#6366f1" stroke="#ffffff" stroke-width="1.5"/>
+<circle cx="1079.1" cy="660.2" r="3.5" fill="#6366f1" stroke="#ffffff" stroke-width="1.5"/>
+<circle cx="1120.9" cy="655.5" r="3.5" fill="#6366f1" stroke="#ffffff" stroke-width="1.5"/>
+<circle cx="1162.7" cy="647.9" r="7" fill="#10b981" stroke="#ffffff" stroke-width="1.5"/>
+<circle cx="1204.5" cy="651.7" r="3.5" fill="#6366f1" stroke="#ffffff" stroke-width="1.5"/>
+<circle cx="1246.4" cy="656.4" r="3.5" fill="#6366f1" stroke="#ffffff" stroke-width="1.5"/>
+<circle cx="1288.2" cy="652.7" r="3.5" fill="#6366f1" stroke="#ffffff" stroke-width="1.5"/>
+<circle cx="1330.0" cy="658.3" r="3.5" fill="#6366f1" stroke="#ffffff" stroke-width="1.5"/>
+<text x="1162.7272727272727" y="633.9444444444445" font-size="12" font-weight="700" fill="#10b981" text-anchor="middle">best: these weights are kept</text>
+<text x="820" y="854" font-size="13" font-weight="400" fill="#4b5563" text-anchor="start">Later epochs can overfit; the final model may come from an earlier epoch.</text>
+</svg>
