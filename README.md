@@ -1003,6 +1003,9 @@ After two trees the normal rows 1 to 4 are low and the positive rows 7 and 8 are
 **How the scoring works.** As for HistGradientBoosting: `p = sigmoid(F0 + 0.05 x sum of the tree outputs)`, returned by `predict_proba(X)[:, 1]`. It is a score between 0 and 1, not a calibrated probability (because of `scale_pos_weight`), and only the ranking of rows matters.
 
 ### GRU
+GRU (Gated Recurrent Unit) is a type of Recurrent Neural Network (RNN) used in Machine Learning, particularly for processing sequential and time-series data.
+It is designed to learn relationships between data points over time, remembering relevant information from previous observations.
+GRU is can be considered as a simplified version of STM (Long Short-Term Memory) with a simpler architecture and fewer parameters.
 
 - **Hyperparameters:** window 60 s by default (`--gru-window`; the class default of 30 s is overridden by the command line), 1 layer with 32 hidden units, 12 epochs, batch 512, AdamW with learning rate 0.002 and weight decay 1e-4, gradient clipping at 1.0, positive-class weight `sqrt(neg/pos)`.
 - **Learned parameters:** 4,545 weights (GRU input weights 1,248; recurrent weights 3,072; biases 192; output layer 33).
