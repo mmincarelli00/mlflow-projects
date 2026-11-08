@@ -329,6 +329,25 @@ def time_splits(df, horizon_s, n_splits=4, start_frac=0.5):
             np.flatnonzero((t >= test_start) & (t < test_end))
 
 
+def fit_val_split(rows, t, horizon_s, val_frac):
+    """Split training rows by time into a fit part and a validation part.
+
+    The validation part is the latest `val_frac` of the training time range;
+    an embargo of `horizon_s` seconds is left between the two, because the
+    labels look `horizon_s` seconds ahead. Not random: neighbouring seconds of
+    the same UE on both sides would make the threshold come out too low.
+    """
+    rows = np.asarray(rows)
+    tr_t = t[rows]
+    val_start = tr_t.max() - val_frac * (tr_t.max() - tr_t.min())
+    return (rows[tr_t < val_start - horizon_s], rows[tr_t >= val_start])
+
+
+def calibrate_threshold(s_val, y_val):
+    """Alert threshold: the (1 - TARGET_FPR) quantile of validation NORMAL scores."""
+    return float(np.quantile(s_val[y_val == 0], 1 - TARGET_FPR))
+
+
 def cell_holdout_split(df, horizon_s, frac=0.25, seed=0):
     """Train on some cells (early period), test on unseen cells (later period)."""
     rng = np.random.default_rng(seed)
@@ -342,12 +361,14 @@ def cell_holdout_split(df, horizon_s, frac=0.25, seed=0):
 
 
 # ---------------------------------------------------------------- metrics ---
-def evaluate(te_df, y, s, horizon_s):
-    """Operational metrics at the threshold giving TARGET_FPR on normal rows."""
+def evaluate(te_df, y, s, horizon_s, thr):
+    """Operational metrics on test rows at a threshold fixed in advance (from
+    the validation part). realized_fpr is the false-alarm rate that threshold
+    actually gives on the test normal rows (target: TARGET_FPR)."""
     out = {"pr_auc": float(average_precision_score(y, s))}
-    thr = np.quantile(s[y == 0], 1 - TARGET_FPR)
     alert = s > thr
     out["recall_at_1pct_fpr"] = float(alert[y == 1].mean())
+    out["realized_fpr"] = float(alert[y == 0].mean())
 
     t = te_df["t"].to_numpy()
     ue = te_df["ue_id"].to_numpy()
@@ -397,9 +418,23 @@ def log_sklearn_model(model, name="model"):
 
     
 # -------------------------------------------------------------------- run ---
-def run_family(Family, df, feat_cols, horizon_s, dataset_tag, n_splits):
+def fit_and_calibrate(Family, feat_cols, X, y, t, tr, horizon_s, val_frac):
+    """Fit on the fit part of `tr` only and set the threshold on its validation
+    part. The model is NOT refitted on all of `tr` afterwards: a refitted model
+    scores on a different scale and the threshold would no longer be valid.
+    Returns (model, threshold), or (None, None) if the split is unusable."""
+    fit, val = fit_val_split(tr, t, horizon_s, val_frac)
+    if len(fit) == 0 or y[fit].sum() == 0 or (y[val] == 0).sum() == 0:
+        return None, None
+    model = Family(feat_cols).fit(X[fit], y[fit], idx=fit)
+    thr = calibrate_threshold(model.score(X[val], idx=val), y[val])
+    return model, thr
+
+
+def run_family(Family, df, feat_cols, horizon_s, dataset_tag, n_splits, val_frac):
     X = df[feat_cols].to_numpy(np.float32)
     y = df["label"].to_numpy()
+    t = df["t"].to_numpy()
     if hasattr(Family, "prepare"):       # sequence models cache the full series
         Family.prepare(df)
 
@@ -409,39 +444,61 @@ def run_family(Family, df, feat_cols, horizon_s, dataset_tag, n_splits):
 
     with mlflow.start_run(run_name=f"{Family.name}-h{horizon_s}s"):
         mlflow.set_tags({"dataset": dataset_tag, "task": "rlf_prediction",
-                         "split": "rolling_origin_time", "horizon_s": horizon_s,
+                         "split": "rolling_origin_time+time_val_calibration",
+                         "horizon_s": horizon_s,
                          "feature_version": FEATURE_VERSION})
         # n_features = engineered features; the GRU instead logs seq_channels.
         mlflow.log_params({**Family.params, "n_features": len(feat_cols),
-                           "n_rows": len(df), "target_fpr": TARGET_FPR})
+                           "n_rows": len(df), "target_fpr": TARGET_FPR,
+                           "val_frac": val_frac, "val_embargo_s": horizon_s})
  
-        folds = []
-        for tr, te in time_splits(df, horizon_s, n_splits):
-            if y[tr].sum() == 0 or y[te].sum() == 0:
+        folds, fold_info = [], []
+        for k, (tr, te) in enumerate(time_splits(df, horizon_s, n_splits)):
+            if y[te].sum() == 0:
                 continue
-            model = Family(feat_cols).fit(X[tr], y[tr], idx=tr)
+            model, thr = fit_and_calibrate(Family, feat_cols, X, y, t, tr,
+                                           horizon_s, val_frac)
+            if model is None:
+                continue
             t0 = time.perf_counter()
             s = model.score(X[te], idx=te)
             infer_us = (time.perf_counter() - t0) / len(te) * 1e6
-            m = evaluate(df.iloc[te], y[te], s, horizon_s)
+            m = evaluate(df.iloc[te], y[te], s, horizon_s, thr)
             m["infer_us_per_sample"] = infer_us
             folds.append(m)
+            fold_info.append({"fold": k, "threshold": thr,
+                              "realized_fpr": m["realized_fpr"]})
         if not folds:
             print(f"[{Family.name}] no usable folds (no positives)")
             return None
         summary = mean_metrics(folds)
         log_metrics(summary)
+        # Per-fold threshold and realized FPR: an artifact, not metrics.
+        mlflow.log_dict(fold_info, "fold_thresholds.json")
  
         # Generalisation to unseen cells.
         tr, te = cell_holdout_split(df, horizon_s)
-        if y[tr].sum() > 0 and y[te].sum() > 0:
-            model = Family(feat_cols).fit(X[tr], y[tr], idx=tr)
-            ch = evaluate(df.iloc[te], y[te], model.score(X[te], idx=te), horizon_s)
-            log_metrics(ch, prefix="cell_holdout_")
-            summary["cell_holdout_pr_auc"] = ch["pr_auc"]
+        if y[te].sum() > 0:
+            model, thr = fit_and_calibrate(Family, feat_cols, X, y, t, tr,
+                                           horizon_s, val_frac)
+            if model is not None:
+                ch = evaluate(df.iloc[te], y[te], model.score(X[te], idx=te),
+                              horizon_s, thr)
+                log_metrics(ch, prefix="cell_holdout_")
+                summary["cell_holdout_pr_auc"] = ch["pr_auc"]
  
-        # Final model on all data, plus artifacts that keep it portable.
-        final = Family(feat_cols).fit(X, y, idx=np.arange(len(df)))
+        # Final model: same fit/validation split over all data (no refit on
+        # 100%), so the stored threshold matches the stored model's scores.
+        final, final_thr = fit_and_calibrate(Family, feat_cols, X, y, t,
+                                             np.arange(len(df)), horizon_s, val_frac)
+        if final is None:
+            print(f"[{Family.name}] final model skipped (unusable fit/val split)")
+            summary["model"] = Family.name
+            return summary
+        mlflow.log_metric("final_threshold", final_thr)
+        mlflow.log_dict({"threshold": final_thr, "target_fpr": TARGET_FPR,
+                         "val_frac": val_frac, "val_embargo_s": horizon_s},
+                        "alert_threshold.json")
         mlflow.log_dict({"feature_version": FEATURE_VERSION,
                          "feature_columns": feat_cols}, "features.json")
         for fname, obj in final.artifacts().items():
@@ -464,6 +521,9 @@ def main():
     ap.add_argument("--seconds", type=int, default=3600)
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--n-splits", type=int, default=4)
+    ap.add_argument("--val-frac", type=float, default=0.2,
+                    help="latest share of each training period used to set the "
+                         "alert threshold (the model is fitted on the rest)")
     ap.add_argument("--csv", default=None, help="real data with the same columns")
     ap.add_argument("--tracking-uri", default="http://127.0.0.1:5000")
     ap.add_argument("--experiment", default="oran-rlf-prediction")
@@ -484,10 +544,13 @@ def main():
     print(f"rows={len(df):,} features={len(feat_cols)} "
           f"positive_rate={df['label'].mean():.3%} rlf_events={int(df['rlf'].sum())}")
    
+    if not 0 < args.val_frac < 1:
+        ap.error("--val-frac must be between 0 and 1")
     GRUModel.configure(args.gru_window, args.gru_epochs)
     
     results = [r for r in (run_family(F, df, feat_cols, args.horizon, tag,
-                                      args.n_splits) for F in FAMILIES) if r]
+                                      args.n_splits, args.val_frac)
+                           for F in FAMILIES) if r]
     table = pd.DataFrame(results).set_index("model").round(3)
     print("\n" + table.to_string())
 
