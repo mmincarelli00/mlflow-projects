@@ -19,6 +19,7 @@ import os
 os.environ["GIT_PYTHON_REFRESH"] = "quiet"
 
 import mlflow
+import mlflow.pyfunc
 import mlflow.sklearn
 import numpy as np
 import pandas as pd
@@ -56,7 +57,7 @@ SEQ_COLS = ["rsrp", "rsrq", "sinr", "ul_sinr", "cqi", "dl_bler", "harq_retx",
 # ----------------------------------------------------------------- models ---
 class RobustZ:
     """Unsupervised baseline: max |robust z-score| over a few KPI features."""
-    name = "robust_z_baseline"
+    name = "robust_z"
     params = {"cols": ",".join(BASELINE_COLS)}
 
     def __init__(self, feature_names):
@@ -67,6 +68,7 @@ class RobustZ:
         Xs = X[:, self.idx]
         self.med = np.median(Xs, axis=0)
         self.mad = np.median(np.abs(Xs - self.med), axis=0) * 1.4826 + 1e-9
+        self.example = Xs[:5]            # input example for the logged model
         return self
 
     def score(self, X, idx=None):
@@ -75,6 +77,47 @@ class RobustZ:
     def artifacts(self):
         return {"robust_z_stats.json": {"median": self.med.tolist(),
                                         "mad": self.mad.tolist()}}
+
+    def log_model(self, name="model"):
+        """Log as an MLflow pyfunc model: input = a DataFrame with the
+        BASELINE_COLS columns, output = the robust-z score of each row.
+        The scorer object is saved with CloudPickle (like the other families);
+        only load models you created yourself or trust."""
+        import logging
+        from mlflow.models import ModelSignature
+        from mlflow.types import ColSpec, Schema
+        sig = ModelSignature(
+            inputs=Schema([ColSpec("float", c) for c in BASELINE_COLS]),
+            outputs=Schema([ColSpec("double", "robust_z_score")]))
+        example = pd.DataFrame(self.example, columns=BASELINE_COLS)
+        p = inspect.signature(mlflow.pyfunc.log_model).parameters
+        kw = {"name" if "name" in p else "artifact_path": name}
+        # Silence only the known "python_model is serialized with CloudPickle"
+        # warning while logging this model.
+        log = logging.getLogger("mlflow.pyfunc")
+        level = log.level
+        log.setLevel(logging.ERROR)
+        try:
+            mlflow.pyfunc.log_model(
+                python_model=_RobustZPyfunc(self.med, self.mad),
+                signature=sig, input_example=example, **kw)
+        finally:
+            log.setLevel(level)
+
+
+class _RobustZPyfunc(mlflow.pyfunc.PythonModel):
+    """Self-contained scorer for RobustZ (only numpy and pandas needed)."""
+
+    def __init__(self, med, mad):
+        self.cols = list(BASELINE_COLS)
+        self.med = np.asarray(med, dtype=np.float64)
+        self.mad = np.asarray(mad, dtype=np.float64)
+
+    def predict(self, context, model_input: pd.DataFrame,
+                params: dict | None = None) -> pd.DataFrame:
+        x = model_input[self.cols].to_numpy(np.float64)
+        return pd.DataFrame({"robust_z_score":
+                             np.abs((x - self.med) / self.mad).max(axis=1)})
 
 
 class IForest:
