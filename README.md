@@ -11,24 +11,63 @@
 - [O-RAN interfaces involved in this experiment](#o-ran-interfaces-involved-in-this-experiment)
   - [O-RAN in brief](#o-ran-in-brief)
   - [Nodes](#nodes)
+    - [gNB and E2 nodes](#gnb-and-e2-nodes)
+    - [How many of each](#how-many-of-each)
+    - [Hosting: the O-Cloud and its sites](#hosting-the-o-cloud-and-its-sites)
+    - [rApps and xApps](#rapps-and-xapps)
+    - [Where the RLF application sits](#where-the-rlf-application-sits)
   - [Interfaces](#interfaces)
+    - [Protocols, data formats and tappability](#protocols-data-formats-and-tappability)
   - [E2 in detail: the primary data source](#e2-in-detail-the-primary-data-source)
   - [O1 in detail: the secondary data source](#o1-in-detail-the-secondary-data-source)
   - [Getting the data when E2 and O1 are encrypted](#getting-the-data-when-e2-and-o1-are-encrypted)
+  - [Where the experiment data can come from](#where-the-experiment-data-can-come-from)
 - [Purpose and context](#purpose-and-context)
 - [Repository layout](#repository-layout)
 - [The three files](#the-three-files)
   - [`RLF_synthetic_data.py`](#rlf_synthetic_datapy-a-stand-in-for-real-kpm-data)
+    - [Collecting the same dataset from a real system](#collecting-the-same-dataset-from-a-real-system)
   - [`RLF_features.py`](#rlf_featurespy-features-and-labels)
+    - [Recognizing an RLF in real data](#recognizing-an-rlf-in-real-data)
   - [`RLF_train.py`](#rlf_trainpy-the-comparison-harness)
 - [Quick start](#quick-start)
 - [Evaluation method](#evaluation-method)
+  - [What a fold is](#what-a-fold-is)
+  - [How the 4 rolling-origin time folds work](#how-the-4-rolling-origin-time-folds-work)
+  - [Fit and validation parts of each training period](#fit-and-validation-parts-of-each-training-period)
 - [Model families](#model-families)
+  - [Robust z-score](#robust-z-score)
+  - [Isolation Forest](#isolation-forest)
+  - [HistGradientBoosting](#histgradientboosting)
+  - [XGBoost](#xgboost)
+  - [GRU](#gru)
+    - [How the GRU reads its input: window, channels, batch and epoch](#how-the-gru-reads-its-input-window-channels-batch-and-epoch)
+    - [Tabular models versus the sequence model](#tabular-models-versus-the-sequence-model)
 - [Results of the comparison tests](#results-of-the-comparison-tests)
+  - [5 s horizon (positive rate 0.752%)](#5-s-horizon-positive-rate-0752)
+  - [30 s horizon (positive rate 4.488%), model seed 42](#30-s-horizon-positive-rate-4488-model-seed-42)
+  - [Repeat runs at 30 s: GRU window 60 and model seed 40](#repeat-runs-at-30-s-gru-window-60-and-model-seed-40)
+  - [What the tests show](#what-the-tests-show)
 - [Conclusions and caveats](#conclusions-and-caveats)
 - [Next steps](#next-steps)
 - [From experiment to a service assurance application](#from-experiment-to-a-service-assurance-application)
+  - [What the application would do](#what-the-application-would-do)
+  - [Reference architecture](#reference-architecture)
+  - [Deployment options](#deployment-options)
+  - [Making the models operational](#making-the-models-operational)
+  - [MLOps lifecycle with MLflow](#mlops-lifecycle-with-mlflow)
+  - [Integration with service assurance processes](#integration-with-service-assurance-processes)
+  - [Productization roadmap](#productization-roadmap)
+  - [Risks and open questions](#risks-and-open-questions)
 - [Evolving into an automated closed loop with the SMO](#evolving-into-an-automated-closed-loop-with-the-smo)
+  - [From advisory to autonomous](#from-advisory-to-autonomous)
+  - [The closed loop](#the-closed-loop)
+  - [Two nested loops](#two-nested-loops)
+  - [SMO integration](#smo-integration)
+  - [Guardrails and safety](#guardrails-and-safety)
+  - [What changes in the models and the data](#what-changes-in-the-models-and-the-data)
+  - [Evolution roadmap](#evolution-roadmap)
+  - [Risks and open questions](#risks-and-open-questions-1)
 
 ## O-RAN interfaces involved in this experiment
 
@@ -733,13 +772,15 @@ NOTE: setting TARGET_FPR = 0 makes sense only if all positive rows have always a
 
 Every model turns a UE-second into one risk number, and a higher score always means a higher risk. The alert threshold is a percentile of the validation scores, and `pr_auc` uses only their ranking, so the different scales do not matter for comparing the models.
 
-| Model | Score | In `RLF_train.py` | Uses labels in training? |
-| --- | --- | --- | --- |
-| **Robust z-score** | The largest absolute robust z-score among its 6 features | `np.abs((X - median) / MAD).max(axis=1)` | No |
-| **Isolation Forest** | The negative of scikit-learn's `score_samples`: a shorter average path through the random trees means more anomalous | `-score_samples(X)` | No (trained on normal rows only) |
-| **HistGradientBoosting** | The predicted probability of an RLF within the horizon | `predict_proba(X)[:, 1]` | Yes |
-| **XGBoost** | The predicted probability of an RLF within the horizon | `predict_proba(X)[:, 1]` | Yes |
-| **GRU** | The sigmoid of the network's output after it reads the window of the last 30 or 60 s | `torch.sigmoid(logits)` | Yes |
+| Model | Score | In `RLF_train.py` | Uses labels in training? | Unit / range of `final_threshold` |
+| --- | --- | --- | --- | --- |
+| **Robust z-score** | The largest absolute robust z-score among its 6 features | `np.abs((X - median) / MAD).max(axis=1)` | No | Robust standard deviations (no unit); 0 to infinity |
+| **Isolation Forest** | The negative of scikit-learn's `score_samples`: a shorter average path through the random trees means more anomalous | `-score_samples(X)` | No (trained on normal rows only) | Isolation Forest anomaly score (no unit); 0 to 1 |
+| **HistGradientBoosting** | The predicted probability of an RLF within the horizon | `predict_proba(X)[:, 1]` | Yes | Probability-like value, 0 to 1, strongly inflated by `class_weight="balanced"` |
+| **XGBoost** | The predicted probability of an RLF within the horizon | `predict_proba(X)[:, 1]` | Yes | Probability-like value, 0 to 1, moderately inflated by `scale_pos_weight = sqrt(neg/pos)` |
+| **GRU** | The sigmoid of the network's output after it reads the window of the last 30 or 60 s | `torch.sigmoid(logits)` | Yes | Probability-like value, 0 to 1, moderately inflated by `pos_weight = sqrt(neg/pos)` |
+
+`final_threshold` is the 99th percentile (`1 - TARGET_FPR`) of the final model's scores on the normal rows of the validation part, so it is expressed **in the unit of that family's score**. Its meaning is the same for every family (1% of the validation normal rows score above it), but its values cannot be compared across families: a z-score threshold of 4.5 and an XGBoost threshold of 0.3 are in different units. Even within one family it moves from run to run with the data, the horizon and `TARGET_FPR`. To compare models, use `realized_fpr` and `recall_at_1pct_fpr`, which put every family at the same false-alarm rate.
 
 **Metrics**
 
@@ -863,6 +904,8 @@ For the slope features, the first `w` seconds of each UE have no value `w` secon
 **Output.** For each UE-second row, one number: the **anomaly score**, `max |robust z|`.
 
 - It is always 0 or more, with no upper limit. A value of 3 means "the most unusual feature is 3 robust standard deviations from its typical value".
+- **Unit:** robust standard deviations, with no physical unit. The 6 features have their own units (dB/s for the slopes, a ratio for the BLER, and so on), but dividing by the scaled MAD (1.4826 x MAD, comparable to a standard deviation for roughly normal data) cancels them.
+- **`final_threshold`** is in the same unit. For example, a value of 4.5 means an alert fires when at least one of `rsrp_slope_5s`, `sinr_slope_5s`, `nb_gap`, `dl_bler_mean_5s`, `harq_retx_mean_5s` or `ta_slope_30s` is more than 4.5 robust standard deviations from its median on the fit part.
 - It is not a probability and not a yes/no decision. Higher means more anomalous, and only the ranking of the rows matters. The alert threshold is applied afterwards in the evaluation, as the 99th percentile of the validation part's normal rows' scores (see `TARGET_FPR`).
 - It looks at the **absolute** value, so it flags unusual values in both directions, including a feature that moves in the "good" direction.
 - It scores each row on its own, from that row's 6 feature values. It does not look at other rows beyond the windows already inside the features.
@@ -905,6 +948,7 @@ For the slope features, the first `w` seconds of each UE have no value `w` secon
 - **Score:** `anomaly score = 2 ^ (-E[h(x)] / c(n))`, a value between 0 and 1. A row with a path as long as `c(n)` scores about 0.5, a much shorter path scores towards 1 (for example `E[h] = 2` gives 0.87), and a longer path scores below 0.5.
 - **In the code:** scikit-learn's `score_samples` returns the **negative** of this value, so `score = -score_samples(X)` brings it back to the anomaly score above. **Higher means more anomalous**.
 - **Output used by the evaluation:** one score per UE-second row. As for the other families, only the ranking of rows matters, and the alert threshold is the 99th percentile of the validation part's normal rows' scores (`TARGET_FPR`), not 0.5.
+- **Unit of the score and of `final_threshold`:** the anomaly score of the original Isolation Forest paper (Liu et al.), with no unit and a range of 0 to 1. It compares the row's average path length `E[h(x)]` over the 200 trees with `c(n)`, the average path length expected for n = 256 samples (the default `max_samples`): about 0.5 means the row is not distinctive, values near 1 mean it is isolated very quickly. Because the model is trained on normal rows only, `final_threshold` usually lands somewhere around 0.5 to 0.65.
 
 ### HistGradientBoosting
 
@@ -968,6 +1012,7 @@ HistGradientBoosting provides no importance score for the used features. That is
 - **Things to know:**
   - **Each row is scored on its own,** from its 105 feature values. Recent history reaches the model only through the engineered window features.
   - **Class weights are not part of scoring.** `class_weight="balanced"` changes how the trees are trained, not this formula. It does push the probabilities up, so `p` is a score, not a calibrated probability.
+  - **Unit of the score and of `final_threshold`:** a probability-like value between 0 and 1, but **strongly inflated**. `class_weight="balanced"` gives the positive and negative classes the same total weight, so in the ideal case (a model that fits the weighted log-loss perfectly) the predicted odds are about `neg/pos` times the true odds. With rare RLFs this pushes the values far above the real event rate, so `final_threshold` is a ranking cut-off, not an actual probability of an RLF. To read it as a probability, a calibration step (for example isotonic or Platt calibration on the validation part) would be needed.
   - **What happens next:** the alert threshold, set beforehand at the 99th percentile of the validation part's normal rows' scores (`TARGET_FPR`), is applied to these scores. A row with a higher score raises an alert.
   - **Cost:** scoring is just walking up to 300 trees of depth at most 6, so it is fast. This is what the `infer_us_per_sample` metric measures.
 
@@ -1048,6 +1093,8 @@ After two trees the normal rows 1 to 4 are low and the positive rows 7 and 8 are
 
 **How the scoring works.** As for HistGradientBoosting: `p = sigmoid(F0 + 0.05 x sum of the tree outputs)`, returned by `predict_proba(X)[:, 1]`. It is a score between 0 and 1, not a calibrated probability (because of `scale_pos_weight`), and only the ranking of rows matters.
 
+- **Unit of the score and of `final_threshold`:** a probability-like value between 0 and 1, **moderately inflated**. The positive class is weighted by `scale_pos_weight = sqrt(neg/pos)`, so in the ideal case the predicted odds are about `sqrt(neg/pos)` times the true odds: less inflated than HistGradientBoosting (`neg/pos`), but still not a real probability. The two boosting models' thresholds therefore cannot be compared with each other either, even though both are "probabilities". A calibration step on the validation part would be needed to read the threshold as a probability.
+
 ### GRU
 GRU (Gated Recurrent Unit) is a type of Recurrent Neural Network (RNN) used in Machine Learning, particularly for processing sequential and time-series data.
 It is designed to learn relationships between data points over time, remembering relevant information from previous observations.
@@ -1058,6 +1105,8 @@ GRU is can be considered as a simplified version of STM (Long Short-Term Memory)
 - **Idea:** the GRU (Gated Recurrent Unit) reads the window second by second and keeps a memory vector, using an update gate and a reset gate to decide what to keep. The final memory goes through a linear layer and a sigmoid.
 - **Input:** 13 raw channels (the 10 KPIs `rsrp`, `rsrq`, `sinr`, `ul_sinr`, `cqi`, `dl_bler`, `harq_retx`, `ta`, `phr` and `a3_events`, plus `nb_gap`, `a3_margin` and `ho_cmd`). It does not see the 80 rolling features, because it is meant to learn its own temporal summaries from the raw KPIs.
 - **Training:** inputs are standardized with training-set statistics, and the best epoch is chosen on a validation slice taken from the end of its fit part.
+- **Score:** `torch.sigmoid(logits)`, one value between 0 and 1 per UE-second, read as the predicted probability of an RLF within the horizon.
+- **Unit of the score and of `final_threshold`:** a probability-like value between 0 and 1, **moderately inflated**, like XGBoost. The loss is `BCEWithLogitsLoss` with `pos_weight = sqrt(neg/pos)`, so in the ideal case the predicted odds are about `sqrt(neg/pos)` times the true odds. Keeping the epoch with the best PR-AUC (a ranking metric) instead of the lowest loss is a further reason the output is not calibrated. `final_threshold` is therefore a ranking cut-off, not an actual probability of an RLF.
 
 ![How the GRU learns: mini-batch and epoch loops, one window unrolled through the GRU, the gate equations and best-epoch selection on the validation slice](docs/gru.png)
 
