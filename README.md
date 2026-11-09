@@ -565,13 +565,15 @@ In real data the `rlf` column, and therefore every label, comes from evidence on
 
 **What each run logs**
 
-- Parameters, tags (dataset, feature version, horizon) and the averaged metrics.
+- Parameters (including `val_frac` and `val_embargo_s`), tags (dataset, feature version, horizon, and the split `rolling_origin_time+time_val_calibration`) and the averaged metrics, including `realized_fpr`, the false-alarm rate that the alert threshold actually gives on the test folds.
+- `final_threshold` (a metric) and `alert_threshold.json`: the alert threshold of the final model, with `target_fpr`, `val_frac` and `val_embargo_s`.
+- `fold_thresholds.json`: the alert threshold and the `realized_fpr` of each time fold.
 - `features.json`, plus feature importances for XGBoost and the learned statistics for the z-score and the GRU.
-- The trained model, named per family and horizon (for example `rlf_xgboost_h30s` or `rlf_hist_gradient_boosting_h30s`).
+- The trained model, named per family and horizon (for example `rlf_robust_z_h30s`, `rlf_xgboost_h30s` or `rlf_hist_gradient_boosting_h30s`). The z-score baseline is logged as an MLflow `pyfunc` model.
 
-**Command-line options:** `--horizon`, `--n-ues`, `--seconds`, `--seed` (data), `--n-splits`, `--csv` (real data with the same columns), `--tracking-uri`, `--experiment`, `--gru-window` (default 60) and `--gru-epochs` (default 12). There is no option to skip the GRU, so PyTorch and XGBoost must both be installed.
+**Command-line options:** `--horizon`, `--n-ues`, `--seconds`, `--seed` (data), `--n-splits`, `--val-frac` (default 0.2: the latest share of each training period used to set the alert threshold, between 0 and 1; the model is fitted on the rest), `--csv` (real data with the same columns), `--tracking-uri`, `--experiment`, `--gru-window` (default 60) and `--gru-epochs` (default 12). There is no option to skip the GRU, so PyTorch and XGBoost must both be installed.
 
-**Constants in the code:** `SEED = 42` (model randomness) and `TARGET_FPR = 0.01` (false-alarm rate used to set the alert threshold).
+**Constants in the code:** `SEED = 42` (model randomness) and `TARGET_FPR = 0.01` (false-alarm rate used to set the alert threshold on the validation part of each training period).
 
 ## Quick start
 
@@ -588,6 +590,9 @@ python RLF_train.py --horizon 30 --gru-window 30
 # --seed sets the data seed; the model seed is the SEED constant in RLF_train.py
 python RLF_train.py --horizon 30 --seed 8
 
+# --val-frac sets the share of each training period used for the alert threshold (default 0.2)
+python RLF_train.py --horizon 30 --val-frac 0.3
+
 mlflow ui                                # http://127.0.0.1:5000
 ```
 
@@ -597,10 +602,10 @@ Every family is trained and scored on the same time-ordered splits, so differenc
 
 **Splits**
 
-- **4 rolling-origin time folds.** Train on the first 50%, 62.5%, 75% and 87.5% of the time range, then test on the next 12.5% after a gap (embargo) equal to the horizon. The gap stops the last training labels from reaching into the test period. Reported metrics are the average over the 4 folds.
-- **1 cell hold-out.** Train on the early period (before 70% of the time) using about 75% of the cells; test on the other 25% of cells in the later period. It checks generalization to unseen cells. Their metrics come from one split, so each is a single value, not an average.
-- **1 final model** trained on all the data and logged to MLflow. It has no test score. This is the final model that would be actually deployed and used in production.
-- Inside training, the GRU holds out the last 15% of its training period to choose the best epoch, and scikit-learn's HistGradientBoosting uses its own internal early-stopping validation when the data is large.
+- **4 rolling-origin time folds.** Train on the first 50%, 62.5%, 75% and 87.5% of the time range, then test on the next 12.5% after a gap (embargo) equal to the horizon. The gap stops the last training labels from reaching into the test period. Reported metrics are the average over the 4 folds. The training rows of each fold are then divided into a fit part and a validation part (see "Fit and validation parts" below).
+- **1 cell hold-out.** Train on the early period (before 70% of the time) using about 75% of the cells; test on the other 25% of cells in the later period. It checks generalization to unseen cells. Their metrics come from one split, so each is a single value, not an average. Its training rows are also divided into a fit part and a validation part.
+- **1 final model** fitted on the fit part of all the data (the earliest 80%), with its alert threshold set on the validation part (the latest 20%), and logged to MLflow together with that threshold (`final_threshold`, `alert_threshold.json`). It is **not refitted on 100% of the data**, because a refitted model scores on a different scale and the stored threshold would no longer match it. It has no test score. This is the final model that would be actually deployed and used in production.
+- Wherever the family sections below say "training rows", they mean the **fit part**. Inside it, the GRU holds out the last 15% of its fit part to choose the best epoch, and scikit-learn's HistGradientBoosting uses its own internal early-stopping validation when the data is large.
 
 #### What a fold is
 
@@ -645,13 +650,43 @@ What to notice in the example:
 - **The first half is never tested.** It is only ever training data, because a model needs some history before it can predict anything.
 - **A positive row near the end of training is safe.** A row at second 1,799 in fold 1 is labelled by RLFs in 1,800 to 1,829, all inside the gap, so none of the test period's failures leak into training.
 
-In summary. each of the 5 models (z-score, Isolation Forest, HistGradientBoosting, XGBoost, GRU) is fit and scored on these same 4 folds and 1 cell hold-out fold. The reported metrics  of the 4 test blocks (`pr_auc`, recall at the false-alarm rate, event recall, lead time, alert episodes, inference time) are average values, while the cell hold-out metrics (cell_holdout pr_auc, cell_holdout recall at the false-alarm rate, cell_holdout event recall, cell_holdout lead time, cell_holdout alert episodes) are single values. So differences between models come from the models and not from different data. Every reported metric is computed only on test rows, and none is computed on training data.
+#### Fit and validation parts of each training period
+
+The alert threshold needs scores from rows the model was not fitted on, so each training period is split again by time (`fit_val_split` in `RLF_train.py`):
+
+- **Validation part:** the latest `--val-frac` of the training time range (default 0.2).
+- **Gap:** `horizon` seconds are left unused between the fit part and the validation part, for the same reason as the gap before the test block: the labels look `horizon` seconds ahead, so the last fit rows would otherwise carry information about validation failures.
+- **Fit part:** everything before the gap. The model is fitted on this part only.
+- **Not random:** a random split would put neighbouring seconds of the same UE on both sides, the validation scores would look better than those of new data, and the threshold would come out too low.
+- **Unusable splits are skipped:** a fold is skipped if its fit part has no positive row or its validation part has no normal row, and the final model is skipped with a message in the same case.
+- **Same rule everywhere:** the time folds, the cell hold-out (inside its early period) and the final model (over all the data) all use it, with the same `--val-frac`.
+
+Default synthetic run (30 s horizon, 20% validation), in seconds with the number of rows (60 UEs) in brackets:
+
+| Split | Training period | Fit part | Gap | Validation part | Normal rows in validation | Test |
+| --- | --- | --- | --- | --- | --- | --- |
+| Fold 1 | 0 to 1,799 (108,000) | 0 to 1,409 (84,600) | 1,410 to 1,439 | 1,440 to 1,799 (21,600) | 20,828 | 1,830 to 2,279 (27,000) |
+| Fold 2 | 0 to 2,249 (135,000) | 0 to 1,769 (106,200) | 1,770 to 1,799 | 1,800 to 2,249 (27,000) | 25,784 | 2,280 to 2,729 (27,000) |
+| Fold 3 | 0 to 2,699 (162,000) | 0 to 2,129 (127,800) | 2,130 to 2,159 | 2,160 to 2,699 (32,400) | 30,924 | 2,730 to 3,179 (27,000) |
+| Fold 4 | 0 to 3,149 (189,000) | 0 to 2,489 (149,400) | 2,490 to 2,519 | 2,520 to 3,149 (37,800) | 35,901 | 3,180 to 3,599 (25,200) |
+| Final model | 0 to 3,599 (216,000) | 0 to 2,849 (171,000) | 2,850 to 2,879 | 2,880 to 3,599 (43,200) | 40,898 | none |
+
+On a timeline for fold 1 (F = fit, g = gap, V = validation, S = scored test block, . = not used; one character is about 60 s):
+
+```text
+time (s)   0                             1800           2700           3600
+Fold 1     FFFFFFFFFFFFFFFFFFFFFFFgVVVVVVgSSSSSSS......................
+```
+
+Because the threshold is the 99th percentile, only about 1% of the validation normal rows, roughly 200 to 400 rows in these folds, lie above it, and neighbouring seconds of one UE are correlated. The threshold is therefore a noisy estimate, which is why `realized_fpr` on the test rows is reported.
+
+In summary. each of the 5 models (z-score, Isolation Forest, HistGradientBoosting, XGBoost, GRU) is fit and scored on these same 4 folds and 1 cell hold-out fold. The reported metrics  of the 4 test blocks (`pr_auc`, recall at the false-alarm rate, `realized_fpr`, event recall, lead time, alert episodes per RLF, inference time) are average values, while the cell hold-out metrics (cell_holdout pr_auc, cell_holdout recall at the false-alarm rate, cell_holdout realized_fpr, cell_holdout event recall, cell_holdout lead time, cell_holdout alert episodes per RLF) are single values. So differences between models come from the models and not from different data. Every reported metric is computed only on test rows, and none is computed on fit or validation data. The validation part is used only to set the alert threshold.
 
 Every fold, the cell hold-out and the final model create the model with the same hyperparameters. The hyperparameters are written inside each model class and they are the same for every training run. The hyperparameters are not tuned per fold, and nothing is tuned on the test data, so the scores are not inflated by tuning.
 
-**Alert threshold:** each model outputs a risk score per UE-second. In every test fold the threshold is set at the 99th percentile of the scores of normal rows (`1 − TARGET_FPR`, with `TARGET_FPR = 0.01`), so 1% of normal seconds raise an alert. This gives every model the same false-alarm budget. Because it is computed from the test labels, a live system would need a threshold fixed in advance.
+**Alert threshold:** each model outputs a risk score per UE-second. The threshold is set on the **validation part** of each training period, before any test row is scored: it is the 99th percentile (`1 − TARGET_FPR`, with `TARGET_FPR = 0.01`) of the scores that the fitted model gives to the normal rows of the validation part. It is then **fixed** and applied unchanged to the test rows, so the test labels never influence it, as in a live system. This gives every model the same false-alarm budget on the validation part. On the test rows, the false-alarm rate that the threshold actually produces is reported as `realized_fpr`; it is close to 1%, but not exactly 1%.
 
-**TARGET_FPR** is the false-alarm budget that the evaluation gives to every model: the share of normal UE-seconds that are allowed to trigger an alert. It is set to 0.01 in RLF_train.py, so 1% of normal seconds may raise a false alert.
+**TARGET_FPR** is the false-alarm budget that the evaluation gives to every model: the share of normal UE-seconds that are allowed to trigger an alert. It is set to 0.01 in RLF_train.py, so the threshold is chosen so that 1% of the normal seconds of the validation part raise an alert. On the test rows the rate can differ (`realized_fpr`).
 
 **Definitions**
 
@@ -660,12 +695,13 @@ Every fold, the cell hold-out and the final model create the model with the same
 
 **How it is used**
 
-For each test fold and each model:
+For each fold and each model:
 
-1. **Score** all the test rows.
-2. Take only the **normal rows** (label 0) and find their **99th percentile**, `1 - TARGET_FPR`. That score is the **alert threshold**.
-3. **Flag** every test row with a score above the threshold as an alert. By construction, **1%** of the normal rows are above it.
-4. **Measure** how many failures the alerts catch, with `recall_at_1pct_fpr`, `event_recall`, `median_lead_s` and `alert_episodes_per_rlf`.
+1. **Split** the training period by time into a **fit part** (the earliest 80%) and a **validation part** (the latest 20%, `--val-frac`), with a gap of `horizon` seconds between them.
+2. **Fit** the model on the fit part only.
+3. **Score** the validation part, take only its **normal rows** (label 0) and find their **99th percentile**, `1 - TARGET_FPR`. That score is the **alert threshold**. By construction, **1%** of the validation normal rows are above it.
+4. **Score** the test rows with the same model and **flag** every row with a score above that fixed threshold as an alert. The share of the test normal rows that are flagged is `realized_fpr`.
+5. **Measure** how many failures the alerts catch, with `recall_at_1pct_fpr`, `event_recall`, `median_lead_s` and `alert_episodes_per_rlf`.
 
 A **normal UE-second** is a row whose **label is 0**, that is, a UE-second for which no RLF happens to that same UE in the next `horizon` seconds. "Normal" here means "**no failure ahead**", and not "the radio link looks healthy".
 
@@ -681,7 +717,7 @@ The label of the row at second *t* is 1 if an RLF occurs in (*t*, *t* + `horizon
 
 **Why this matters for `TARGET_FPR`**
 
-- The alert threshold is the **99th percentile** of the scores of exactly these normal rows.
+- The alert threshold is the **99th percentile** of the scores of exactly these normal rows, taken on the validation part.
 - A **false alarm** means an alert on a row with no RLF in the next `horizon` seconds.
 - A model that correctly warns about a degradation that happens to recover is **counted as having raised a false alarm**.
 - This makes the false-alarm figures somewhat **pessimistic**, because some alerts during a degradation episode may be operationally useful even though no RLF followed.
@@ -695,7 +731,7 @@ NOTE: setting TARGET_FPR = 0 makes sense only if all positive rows have always a
  
 **How each family computes the score** (the `score` method in `RLF_train.py`)
 
-Every model turns a UE-second into one risk number, and a higher score always means a higher risk. The alert threshold and the metrics use only the ranking of these scores, so their different scales do not matter.
+Every model turns a UE-second into one risk number, and a higher score always means a higher risk. The alert threshold is a percentile of the validation scores, and `pr_auc` uses only their ranking, so the different scales do not matter for comparing the models.
 
 | Model | Score | In `RLF_train.py` | Uses labels in training? |
 | --- | --- | --- | --- |
@@ -707,7 +743,7 @@ Every model turns a UE-second into one risk number, and a higher score always me
 
 **Metrics**
 
-All metrics are computed on the **test rows only** of each split. The first six are calculated on each of the 4 time folds and then averaged (`nanmean`); the five `cell_holdout_*` metrics come from the single cell hold-out split, use the same formulas, and are not averaged. "Positive rows" are the rows with label 1 (an RLF follows within the horizon), and "normal rows" are the rows with label 0.
+All metrics are computed on the **test rows only** of each split. The first seven are calculated on each of the 4 time folds and then averaged (`nanmean`); the six `cell_holdout_*` metrics come from the single cell hold-out split, use the same formulas, and are not averaged. "Positive rows" are the rows with label 1 (an RLF follows within the horizon), and "normal rows" are the rows with label 0.
 
 Do not confuse a positive row with a flagged row:
 - **Positive row (actual positive)**: label 1. A fact from the dataset, set before training and independently of the model, but the label is used afterwards both to train some models and to evaluate all of them.
@@ -718,13 +754,15 @@ For the metrics below, the **true positive (TP)** is a positive row that is flag
 | Metric | What it measures | How it is calculated | Better |
 | --- | --- | --- | --- |
 | `pr_auc` | How well the scores rank positive rows above normal rows, over all thresholds | Average precision (area under the precision-recall curve) | Higher. Range 0 to 1; chance = the positive rate |
-| `recall_at_1pct_fpr` | Share of positive rows flagged at the 1% false-alarm budget (row level) | Positive rows above the 99th percentile of the normal scores / all positive rows | Higher. Range 0 to 1; chance about 0.01 |
+| `recall_at_1pct_fpr` | Share of positive rows flagged at the 1% false-alarm budget (row level) | Positive rows above the alert threshold (99th percentile of the validation normal scores) / all positive rows | Higher. Range 0 to 1; chance about 0.01 |
+| `realized_fpr` | False-alarm rate that the validation threshold actually gives on the test rows | Normal test rows with a score above the threshold / all normal test rows | **Closest to `TARGET_FPR` (0.01)**. Range 0 to 1 |
 | `event_recall` | Share of RLF events with at least one alert in the horizon before them | Caught events / all events | Higher. Range 0 to 1; about 0.89 at most on the synthetic data |
 | `median_lead_s` | Warning time between the first alert and the failure, over caught events | Median of (failure time − first alert time) | Longer, up to the horizon. Range 1 s to `horizon` s |
 | `alert_episodes_per_rlf` | Alert workload relative to failures: separate alert bursts (true and false together) per actual RLF event | Alerts merged when within one horizon, summed over UEs, divided by the number of RLF events in the test rows | **Closest to 1.0**. Range 0 upwards; NaN if the test rows have no RLF |
 | `infer_us_per_sample` | Scoring cost: microseconds per row | Wall-clock time of `score` on the test rows / number of rows | Lower. Range above 0; depends on the machine |
 | `cell_holdout_pr_auc` | Same as `pr_auc` above, on the cell hold-out split | See `pr_auc` above; only the split differs | As for `pr_auc` |
 | `cell_holdout_recall_at_1pct_fpr` | Same as `recall_at_1pct_fpr` above, on the cell hold-out split | See `recall_at_1pct_fpr` above; only the split differs | As for `recall_at_1pct_fpr` |
+| `cell_holdout_realized_fpr` | Same as `realized_fpr` above, on the cell hold-out split | See `realized_fpr` above; only the split differs | As for `realized_fpr` |
 | `cell_holdout_event_recall` | Same as `event_recall` above, on the cell hold-out split | See `event_recall` above; only the split differs | As for `event_recall` |
 | `cell_holdout_median_lead_s` | Same as `median_lead_s` above, on the cell hold-out split | See `median_lead_s` above; only the split differs | As for `median_lead_s` |
 | `cell_holdout_alert_episodes_per_rlf` | Same as `alert_episodes_per_rlf` above, on the cell hold-out split | See `alert_episodes_per_rlf` above; only the split differs | As for `alert_episodes_per_rlf` |
@@ -743,9 +781,16 @@ For the metrics below, the **true positive (TP)** is a positive row that is flag
 
 **`recall_at_1pct_fpr`**
 - **What it measures:** the share of positive rows the model flags when the false-alarm budget is fixed (1% of normal rows). It is row-level recall: it counts every pre-failure second, not events.
-- **Calculation:** the threshold is the 99th percentile (`1 - TARGET_FPR`) of the normal rows' scores, and a row alerts if its score is **above** the threshold. The metric is `alert[y == 1].mean()`: positive rows that alert divided by all positive rows.
-- **Formula:** `thr = quantile(score of normal rows, 1 - TARGET_FPR)`; `recall = (positive rows with score > thr) / (all positive rows)`.
+- **Calculation:** the threshold is the 99th percentile (`1 - TARGET_FPR`) of the scores of the normal rows of the validation part, fixed before the test rows are scored, and a test row alerts if its score is **above** the threshold. The metric is `alert[y == 1].mean()`: positive rows that alert divided by all positive rows.
+- **Formula:** `thr = quantile(score of validation normal rows, 1 - TARGET_FPR)`; `recall = (positive rows with score > thr) / (all positive rows)`.
 - **Range:** 0 to 1 (1 = every pre-failure row flagged). A random scorer gets about `TARGET_FPR` (0.01).
+
+**`realized_fpr`**
+- **What it measures:** the false-alarm rate that the alert threshold actually produces on the test rows. The threshold is set on the validation part to give `TARGET_FPR`, and `realized_fpr` shows how well that carries over to the test period.
+- **Calculation:** the share of the normal test rows (label 0) whose score is above the threshold.
+- **Formula:** `realized_fpr = (normal test rows with score > thr) / (all normal test rows)`.
+- **Better:** **closest to `TARGET_FPR` (0.01)**, not simply lower. Above 0.01 there are more false alarms than budgeted. Below 0.01 there are fewer alerts than allowed, and usually lower recall.
+- **Range:** 0 to 1. It is also saved for each fold in `fold_thresholds.json`, with the threshold.
 
 **`event_recall`**
 - **What it measures:** the share of RLF events that the model warns about at least once in time. It answers "did we see it coming?" for each failure, whereas `recall_at_1pct_fpr` counts every pre-failure second.
@@ -771,9 +816,9 @@ For the metrics below, the **true positive (TP)** is a positive row that is flag
 - **Calculation:** wall-clock time of the model's `score` call on the test rows (`time.perf_counter`) divided by the number of rows, times 1,000,000. It excludes the cost of computing the features, and it varies from run to run with the machine's load.
 - **Range:** above 0, with no upper limit; it depends on the machine and its load.
 
-**The `cell_holdout_*` metrics** repeat the five metrics above, with the same definitions, formulas and ranges, and differ only in the data they use: the **cell hold-out split**, where the model is trained on about 75% of the cells in the early period (before 70% of the time) and tested on the other 25% of the cells in the later period. The alert threshold of `cell_holdout_recall_at_1pct_fpr`, `cell_holdout_event_recall`, `cell_holdout_median_lead_s` and `cell_holdout_alert_episodes_per_rlf` is the 99th percentile of the hold-out cells' own normal rows. A metric that is NaN, such as `cell_holdout_median_lead_s` when no event is caught, is not logged. They are logged to MLflow only; the terminal table shows just `cell_holdout_pr_auc`. There is no `cell_holdout_infer_us_per_sample`, because inference time is measured only in the time folds. Compare each `cell_holdout_*` value with its time-fold counterpart: a big drop on unseen cells means the model depends on cell-specific patterns.
+**The `cell_holdout_*` metrics** repeat the six metrics above (all but inference time), with the same definitions, formulas and ranges, and differ only in the data they use: the **cell hold-out split**, where the model is trained on about 75% of the cells in the early period (before 70% of the time) and tested on the other 25% of the cells in the later period. The alert threshold of `cell_holdout_recall_at_1pct_fpr`, `cell_holdout_event_recall`, `cell_holdout_median_lead_s` and `cell_holdout_alert_episodes_per_rlf` is the 99th percentile of the normal rows of the validation part of the hold-out's training period (the latest part of the early period, in the training cells). A metric that is NaN, such as `cell_holdout_median_lead_s` when no event is caught, is not logged. They are logged to MLflow only; the terminal table shows just `cell_holdout_pr_auc`. There is no `cell_holdout_infer_us_per_sample`, because inference time is measured only in the time folds. Compare each `cell_holdout_*` value with its time-fold counterpart: a big drop on unseen cells means the model depends on cell-specific patterns.
 
-**Which metrics depend on `TARGET_FPR`:** `recall_at_1pct_fpr`, `event_recall`, `median_lead_s` and `alert_episodes_per_rlf`, and their `cell_holdout_*` versions, all use the alert threshold, so they change when `TARGET_FPR` changes. `pr_auc`, `cell_holdout_pr_auc` and `infer_us_per_sample` do not.
+**Which metrics depend on `TARGET_FPR`:** `recall_at_1pct_fpr`, `realized_fpr`, `event_recall`, `median_lead_s` and `alert_episodes_per_rlf`, and their `cell_holdout_*` versions, as well as `final_threshold`, all use the alert threshold, so they change when `TARGET_FPR` changes. `pr_auc`, `cell_holdout_pr_auc` and `infer_us_per_sample` do not.
 
 The column name `recall_at_1pct_fpr` is fixed in the code and matches the current `TARGET_FPR = 0.01`. If `TARGET_FPR` is changed (for example to 0.02), the name stays the same but the value then refers to the new rate.
 
@@ -795,9 +840,10 @@ The five models (four families, because gradient boosting runs as two separate m
 
 **How it works.** It is a simple statistical rule with no labels and no randomness. It learns what a "typical" value of each of 6 features looks like, then scores every UE-second by how far its **most unusual** feature is from typical. A row far from the typical values on at least one feature gets a high score.
 
-- **Fit (`fit`):** for each of the 6 features, over **all training rows** (labels are ignored, so positive rows are included), compute the median and the scaled MAD (median absolute deviation): `med = median(x)` and `mad = 1.4826 * median(|x - med|) + 1e-9`. The factor 1.4826 makes the MAD comparable to a standard deviation when the data are roughly normal, and the `1e-9` avoids a division by zero. These 12 numbers (6 medians and 6 MADs) are the only things learned, and they are saved in `robust_z_stats.json`. The median and MAD are used instead of the mean and standard deviation because they are barely affected by outliers, such as the pre-failure rows themselves.
+- **Fit (`fit`):** for each of the 6 features, over **all rows of the fit part** (labels are ignored, so positive rows are included), compute the median and the scaled MAD (median absolute deviation): `med = median(x)` and `mad = 1.4826 * median(|x - med|) + 1e-9`. The factor 1.4826 makes the MAD comparable to a standard deviation when the data are roughly normal, and the `1e-9` avoids a division by zero. These 12 numbers (6 medians and 6 MADs) are the only things learned, and they are saved in `robust_z_stats.json`. The median and MAD are used instead of the mean and standard deviation because they are barely affected by outliers, such as the pre-failure rows themselves.
 - **Score (`score`):** for each row, compute the robust z-score of each feature, `z_i = (x_i - med_i) / mad_i`, take the absolute value, and keep the **largest** of the 6: `score = max over i of |z_i|`.
-- **Library and functions:** no machine-learning library. It is a custom class, `RobustZ` in `RLF_train.py`, written with **NumPy** only: `np.median` for the medians and MADs in `fit`, and `np.abs` with `.max(axis=1)` for the score in `score`.
+- **Library and functions:** no machine-learning library. It is a custom class, `RobustZ` in `RLF_train.py` (family name `robust_z`), written with **NumPy** only: `np.median` for the medians and MADs in `fit`, and `np.abs` with `.max(axis=1)` for the score in `score`.
+- **Logged model:** the final model is also logged as an MLflow `pyfunc` model (`RobustZ.log_model`, using the self-contained `_RobustZPyfunc` class), so it appears in the MLflow Models view as `rlf_robust_z_h30s` and can be loaded without the project code. Its input is a DataFrame with the 6 feature columns (float), and its output is a DataFrame with one column, `robust_z_score` (double). The medians and MADs are stored inside it. It is saved with CloudPickle, so load only models you created yourself or trust.
 - **Hyperparameters:** none to tune and no randomness. The fixed settings are the 6 input features (`BASELINE_COLS`, the only parameter logged to MLflow, as `cols`), the MAD scale factor 1.4826, the epsilon 1e-9 and the combination rule (maximum of the absolute z-scores).
 - **Learned:** the 6 medians and 6 MADs, saved in `robust_z_stats.json`.
 
@@ -817,7 +863,7 @@ For the slope features, the first `w` seconds of each UE have no value `w` secon
 **Output.** For each UE-second row, one number: the **anomaly score**, `max |robust z|`.
 
 - It is always 0 or more, with no upper limit. A value of 3 means "the most unusual feature is 3 robust standard deviations from its typical value".
-- It is not a probability and not a yes/no decision. Higher means more anomalous, and only the ranking of the rows matters. The alert threshold is applied afterwards in the evaluation, as the 99th percentile of the normal rows' scores (see `TARGET_FPR`).
+- It is not a probability and not a yes/no decision. Higher means more anomalous, and only the ranking of the rows matters. The alert threshold is applied afterwards in the evaluation, as the 99th percentile of the validation part's normal rows' scores (see `TARGET_FPR`).
 - It looks at the **absolute** value, so it flags unusual values in both directions, including a feature that moves in the "good" direction.
 - It scores each row on its own, from that row's 6 feature values. It does not look at other rows beyond the windows already inside the features.
 - The **max** means a single extreme feature is enough to raise the score, while several mildly unusual features do not add up.
@@ -846,7 +892,7 @@ For the slope features, the first `w` seconds of each UE have no value `w` secon
 
 **How the learning works.** There is no optimization and no loss function: building the trees is random.
 
-- **Train rows:** all training rows with `label == 0`.
+- **Train rows:** the rows of the fit part with `label == 0`.
 - **Per tree:** draw a random sample of 256 of these rows. Start with all of them in one node, pick a **random feature**, pick a **random split value** between the minimum and maximum of that feature in the node, and send each row left or right. Repeat on each child until a node holds a single row or the depth limit of 8 is reached.
 - **Repeat** to build 200 independent trees, each on its own sample and with its own random splits.
 - **Learned:** only the tree structure, which feature and split value each node uses. Nothing is saved as an MLflow artifact.
@@ -858,13 +904,13 @@ For the slope features, the first `w` seconds of each UE have no value `w` secon
 - **Normalize:** `c(n)` is the average path length of an unsuccessful search in a binary tree of n = 256 rows, about 10.2. It makes the score independent of the sample size.
 - **Score:** `anomaly score = 2 ^ (-E[h(x)] / c(n))`, a value between 0 and 1. A row with a path as long as `c(n)` scores about 0.5, a much shorter path scores towards 1 (for example `E[h] = 2` gives 0.87), and a longer path scores below 0.5.
 - **In the code:** scikit-learn's `score_samples` returns the **negative** of this value, so `score = -score_samples(X)` brings it back to the anomaly score above. **Higher means more anomalous**.
-- **Output used by the evaluation:** one score per UE-second row. As for the other families, only the ranking of rows matters, and the alert threshold is the 99th percentile of the normal rows' scores (`TARGET_FPR`), not 0.5.
+- **Output used by the evaluation:** one score per UE-second row. As for the other families, only the ranking of rows matters, and the alert threshold is the 99th percentile of the validation part's normal rows' scores (`TARGET_FPR`), not 0.5.
 
 ### HistGradientBoosting
 
 **Characteristics of the family.** Gradient boosting builds a strong classifier by adding many small decision trees one after the other. HistGradientBoosting is scikit-learn's histogram-based implementation. XGBoost (next section) is the same family. It is run here as a separate model.
 
-- **Supervised:** it learns from the labels, so it is trained on all the training rows, normal and positive, and it learns what a pre-failure row looks like, not just what is unusual.
+- **Supervised:** it learns from the labels, so it is trained on all the rows of the fit part, normal and positive, and it learns what a pre-failure row looks like, not just what is unusual.
 - **Works on all 105 features, with no scaling:** the features can be given to the model as they are, without normalizing or standardizing them first.
   - **What "no scaling" means:** the features have very different units and ranges (`rsrp` around -90 dBm, `dl_bler` between 0 and 1, `harq_retx` a small count, `ta` in timing-advance units). Other models need them brought to a common scale first (the GRU is trained on standardized inputs), because they combine features with weights or distances, and a feature with a large range would dominate. A tree never combines features: each split compares **one** feature with a threshold, such as "is `dl_bler_mean_5s` above 0.12?". Rescaling or shifting a feature, or taking its log, only changes the threshold number, and the same rows go left and right.
   - **Only the order of values matters,** not their size, so outliers and skewed distributions do not distort the model either.
@@ -912,7 +958,7 @@ HistGradientBoosting provides no importance score for the used features. That is
 
 **How the scoring works.**
 
-- **Score:** one number per UE-second row, between 0 and 1, interpreted as the predicted probability of an RLF within the horizon. Because of the class weights it is **not a calibrated probability** (it overestimates the true rate), but only the ranking of rows matters here. The alert threshold is the 99th percentile of the normal rows' scores (`TARGET_FPR`). Scoring uses the trees already trained and learns nothing. For one UE-second row:
+- **Score:** one number per UE-second row, between 0 and 1, interpreted as the predicted probability of an RLF within the horizon. Because of the class weights it is **not a calibrated probability** (it overestimates the true rate), but only the ranking of rows matters here. The alert threshold is the 99th percentile of the validation part's normal rows' scores (`TARGET_FPR`). Scoring uses the trees already trained and learns nothing. For one UE-second row:
   1. **Bin the row.** Each of the 105 feature values is mapped to its bin number, using the bin edges (the boundaries between neighbouring bins) saved during training.
   2. **Walk each tree.** Start at the root and follow the splits ("bin of `dl_bler_mean_5s` <= k?") until a leaf. Each leaf holds a number, its leaf value, which already includes the learning rate of 0.05.
   3. **Add up.** The score is the starting value F0 plus the leaf values from all the trees that were kept: up to 300, or fewer if early stopping ended training sooner.
@@ -922,7 +968,7 @@ HistGradientBoosting provides no importance score for the used features. That is
 - **Things to know:**
   - **Each row is scored on its own,** from its 105 feature values. Recent history reaches the model only through the engineered window features.
   - **Class weights are not part of scoring.** `class_weight="balanced"` changes how the trees are trained, not this formula. It does push the probabilities up, so `p` is a score, not a calibrated probability.
-  - **What happens next:** the evaluation takes these scores and sets the alert threshold at the 99th percentile of the normal rows' scores (`TARGET_FPR`). A row with a higher score raises an alert.
+  - **What happens next:** the alert threshold, set beforehand at the 99th percentile of the validation part's normal rows' scores (`TARGET_FPR`), is applied to these scores. A row with a higher score raises an alert.
   - **Cost:** scoring is just walking up to 300 trees of depth at most 6, so it is fast. This is what the `infer_us_per_sample` metric measures.
 
 **A simple worked example.** 8 rows and one feature, `dl_bler_mean_5s`. The numbers were checked against scikit-learn's `HistGradientBoostingClassifier` (same predictions to 3 decimals). To keep it readable: one-split trees (`max_depth=1`), `learning_rate=0.5` instead of 0.05, no class weights, no early stopping, and no binning (with 8 distinct values, the bins are the values themselves).
@@ -1011,7 +1057,7 @@ GRU is can be considered as a simplified version of STM (Long Short-Term Memory)
 - **Learned parameters:** 4,545 weights (GRU input weights 1,248; recurrent weights 3,072; biases 192; output layer 33).
 - **Idea:** the GRU (Gated Recurrent Unit) reads the window second by second and keeps a memory vector, using an update gate and a reset gate to decide what to keep. The final memory goes through a linear layer and a sigmoid.
 - **Input:** 13 raw channels (the 10 KPIs `rsrp`, `rsrq`, `sinr`, `ul_sinr`, `cqi`, `dl_bler`, `harq_retx`, `ta`, `phr` and `a3_events`, plus `nb_gap`, `a3_margin` and `ho_cmd`). It does not see the 80 rolling features, because it is meant to learn its own temporal summaries from the raw KPIs.
-- **Training:** inputs are standardized with training-set statistics, and the best epoch is chosen on a validation slice taken from the end of the training period.
+- **Training:** inputs are standardized with training-set statistics, and the best epoch is chosen on a validation slice taken from the end of its fit part.
 
 ![How the GRU learns: mini-batch and epoch loops, one window unrolled through the GRU, the gate equations and best-epoch selection on the validation slice](docs/gru.png)
 
@@ -1024,7 +1070,7 @@ The GRU is trained on blocks of shape `(batch, window, channels)`, for example (
 | Window | 60 s by default, 30 s in some runs (`--gru-window`, logged as `window_s`) | The stretch of recent history read for one prediction: for second *t*, the rows from *t−N+1* to *t* of the same UE, where *N* is the window value |
 | Channels | 13 | One input signal measured every second (the raw KPIs listed above). PyTorch calls this `input_size`. "Channel" separates these raw signals from the 105 engineered features of the other models; it has nothing to do with radio channels. A channel holds the raw value at every time step. |
 | Batch | 512 | A set of 512 independent windows, randomly drawn from the training rows, each made of consecutive seconds of one UE, so a batch mixes many UEs and different moments in time. The weights are updated once per batch. |
-| Epoch | 12 at most | One pass over **all** the training windows, which means many batches. A pass over a single batch is an **iteration** (or step): one weight update. In the first time fold there are about 92,000 training windows, so one epoch is about 180 iterations (92,000 / 512). After each epoch the model is scored on the validation slice, and the weights of the best epoch (by PR-AUC) are kept, so the final model may come from an earlier epoch. |
+| Epoch | 12 at most | One pass over **all** the training windows, which means many batches. A pass over a single batch is an **iteration** (or step): one weight update. In the first time fold the GRU has about 72,000 training windows (its fit part of 84,600 rows, minus its own 15% validation slice), so one epoch is about 140 iterations (72,000 / 512). After each epoch the model is scored on the validation slice, and the weights of the best epoch (by PR-AUC) are kept, so the final model may come from an earlier epoch. |
 | Hidden size | 32 | Size of the GRU's memory vector; independent of the input shape |
 
 The relationship is **windows per epoch = batch size × iterations per epoch**.
@@ -1060,6 +1106,8 @@ Three different "windows" appear in this project:
 The tabular models therefore do **not** predict from a single raw sample: their rows already encode the past. The test compares summaries designed by hand with summaries learned from raw sequences, so a GRU gain, if real, cannot be credited to "looking at history" alone. Other differences also matter: the tabular models receive 105 inputs including four noise columns, the GRU receives 13 raw channels (including `ho_cmd`), and a 60 s window reaches further back than the 30 s rolling features.
 
 ## Results of the comparison tests
+
+> **These tables predate two changes to `RLF_train.py`.** They were produced when the alert threshold was taken from the test fold's own normal rows (so the false-alarm rate was exactly 1%) and the models were fitted on the whole training period, and the "Alert episodes / UE-hour" column is the old metric `alert_episodes_per_ue_hour`. The code now sets the threshold on a validation part of each training period, fits the models on the rest, and reports `alert_episodes_per_rlf` and `realized_fpr`. A new run gives different numbers, so these tables are not directly comparable with it and should be regenerated.
 
 > **Which settings produced these tables?** The current defaults in `RLF_train.py` (`SEED = 42`, `TARGET_FPR = 0.01`), except where stated: the seed-40 runs changed the model seed. A full re-run on 2 November 2026 with these defaults (GRU window 60 s) reproduced the 30 s tables exactly for every model except inference time, which varies from run to run with machine load, so the quality metrics are deterministic for a fixed data and model seed.
 
@@ -1125,7 +1173,7 @@ On this synthetic data, supervised learning clearly beats the unsupervised metho
 
 - **Synthetic data.** The generator is simple and has about 5.4 RLFs per UE-hour, far above a real network, so absolute numbers are optimistic. About 11% of RLFs are sudden and cap event recall near 89%.
 - **Limited variation.** All runs share one dataset (data seed 7, 325 events). The seed-40 run changed only model randomness. Differences below about 0.01 in PR-AUC, 0.03 in recall or cell hold-out, and 2 s in lead time should be treated as noise.
-- **Oracle threshold.** The alert threshold comes from the test fold's own normal rows. A deployed system would use a fixed threshold and perform somewhat worse.
+- **Threshold calibration.** The alert threshold is set on a time-based validation part of each training period and applied unchanged to the test rows, so the test labels no longer influence it. The costs are that the models are fitted on about 80% of each training period, and that the false-alarm rate on the test rows (`realized_fpr`) is only close to 1% and moves with any drift between the validation and test periods. The threshold rests on a few hundred validation rows above the 99th percentile, and neighbouring seconds are correlated, so it is noisy.
 - **Unequal inputs.** The tabular models see 105 engineered features; the GRU sees 13 raw channels, and a 60 s window gives it a longer history than any rolling feature except `secs_since_a3`.
 - **`TARGET_FPR` consistency.** The metric name `recall_at_1pct_fpr` is fixed and matches the current `TARGET_FPR = 0.01`. If the constant is changed, re-run all models so the compared runs use the same false-alarm rate.
 - **GRU logging.** Recent MLflow versions default to a PyTorch format that needs an input example, so the code requests pickle and falls back to saving the weights. The pickle route worked on the author's machine; the fallback path has not been tested.
@@ -1135,8 +1183,8 @@ On this synthetic data, supervised learning clearly beats the unsupervised metho
 The most useful next step is a multi-seed comparison, because the current GRU advantage is within what a single seed can produce.
 
 1. **Repeat with 3 to 5 model seeds and several data seeds (`--seed`)** and report mean and standard deviation, so a difference can be judged against the spread.
-2. **Add a `--target-fpr` option** and make the metric name follow its value.
-3. **Log each model's full hyperparameters** (XGBoost currently logs only three) and log the z-score baseline as an MLflow `pyfunc` model so it appears in the Models view.
+2. **Add a `--target-fpr` option** and make the metric name follow its value. Also compare `--val-frac` values (for example 0.1, 0.2 and 0.3) to see how stable the threshold and `realized_fpr` are.
+3. **Log each model's full hyperparameters** (XGBoost currently logs only three).
 4. **Add metrics:** alert-episode precision, lead-time percentiles, and event recall counting only alerts with at least about 10 s of lead.
 5. **Add challengers:** logistic regression as a cheap baseline, a GRU with a 15 s window, and a hybrid GRU that also receives the 105 engineered features.
 6. **Tune XGBoost** (for example `scale_pos_weight`) and compare its feature importances at the 5 s and 30 s horizons.
@@ -1194,8 +1242,8 @@ A pragmatic path is to start as an **advisory service on O1 and trace data**, th
 
 ### Making the models operational
 
-- **Fixed threshold.** The experiment sets the alert threshold from the test fold's own normal rows (an oracle). A product must fix the threshold in advance from a validation period and then monitor the false-alarm rate it actually produces.
-- **Alert budget.** The experiment reports about 7 alert episodes per UE-hour on synthetic data, which would be unusable in a NOC. In production, alert at cell or UE-group level, require persistence, and tune against an agreed budget of alerts per cell per day.
+- **Fixed threshold.** The experiment now sets the alert threshold in advance, from a time-based validation part of the training period, and reports the false-alarm rate it then produces on the test rows (`realized_fpr`). A product must still monitor the false-alarm rate it produces on live data and recalibrate the threshold as the network changes.
+- **Alert budget.** The earlier runs (before the metric became `alert_episodes_per_rlf`) reported about 7 alert episodes per UE-hour on synthetic data, which would be unusable in a NOC. In production, alert at cell or UE-group level, require persistence, and tune against an agreed budget of alerts per cell per day.
 - **Horizon by use case.** A 30 s horizon gives roughly 15 to 18 s of lead time in the tests; a 5 s horizon gives 4 to 6 s. Choose per action: a handover or parameter change needs more warning than a notification.
 - **Model choice.** XGBoost is the sensible default (fast, and its post-training feature-importance report helps inspect the model). The GRU gained about 0.03 PR-AUC on synthetic data at higher compute cost and is a candidate only if the gain holds on real data.
 - **Cost.** Model scoring is cheap in the tests (about 2 to 3 µs per row for XGBoost, 17 to 44 µs for the GRU, varying with machine load). The cost of computing features per UE in a stream was not measured and will likely dominate.
