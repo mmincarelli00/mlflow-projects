@@ -665,7 +665,7 @@ For each test fold and each model:
 1. **Score** all the test rows.
 2. Take only the **normal rows** (label 0) and find their **99th percentile**, `1 - TARGET_FPR`. That score is the **alert threshold**.
 3. **Flag** every test row with a score above the threshold as an alert. By construction, **1%** of the normal rows are above it.
-4. **Measure** how many failures the alerts catch, with `recall_at_1pct_fpr`, `event_recall`, `median_lead_s` and `alert_episodes_per_ue_hour`.
+4. **Measure** how many failures the alerts catch, with `recall_at_1pct_fpr`, `event_recall`, `median_lead_s` and `alert_episodes_per_rlf`.
 
 A **normal UE-second** is a row whose **label is 0**, that is, a UE-second for which no RLF happens to that same UE in the next `horizon` seconds. "Normal" here means "**no failure ahead**", and not "the radio link looks healthy".
 
@@ -721,13 +721,13 @@ For the metrics below, the **true positive (TP)** is a positive row that is flag
 | `recall_at_1pct_fpr` | Share of positive rows flagged at the 1% false-alarm budget (row level) | Positive rows above the 99th percentile of the normal scores / all positive rows | Higher. Range 0 to 1; chance about 0.01 |
 | `event_recall` | Share of RLF events with at least one alert in the horizon before them | Caught events / all events | Higher. Range 0 to 1; about 0.89 at most on the synthetic data |
 | `median_lead_s` | Warning time between the first alert and the failure, over caught events | Median of (failure time − first alert time) | Longer, up to the horizon. Range 1 s to `horizon` s |
-| `alert_episodes_per_ue_hour` | Alert workload: separate alert bursts per UE-hour, true and false together | Alerts merged when within one horizon, summed over UEs, divided by UE-hours | **Closest to the test-set RLF rate** (5.4 per UE-hour in the default run). Range 0 to about 3,600 / (`horizon` + 1) |
+| `alert_episodes_per_rlf` | Alert workload relative to failures: separate alert bursts (true and false together) per actual RLF event | Alerts merged when within one horizon, summed over UEs, divided by the number of RLF events in the test rows | **Closest to 1.0**. Range 0 upwards; NaN if the test rows have no RLF |
 | `infer_us_per_sample` | Scoring cost: microseconds per row | Wall-clock time of `score` on the test rows / number of rows | Lower. Range above 0; depends on the machine |
 | `cell_holdout_pr_auc` | Same as `pr_auc` above, on the cell hold-out split | See `pr_auc` above; only the split differs | As for `pr_auc` |
 | `cell_holdout_recall_at_1pct_fpr` | Same as `recall_at_1pct_fpr` above, on the cell hold-out split | See `recall_at_1pct_fpr` above; only the split differs | As for `recall_at_1pct_fpr` |
 | `cell_holdout_event_recall` | Same as `event_recall` above, on the cell hold-out split | See `event_recall` above; only the split differs | As for `event_recall` |
 | `cell_holdout_median_lead_s` | Same as `median_lead_s` above, on the cell hold-out split | See `median_lead_s` above; only the split differs | As for `median_lead_s` |
-| `cell_holdout_alert_episodes_per_ue_hour` | Same as `alert_episodes_per_ue_hour` above, on the cell hold-out split | See `alert_episodes_per_ue_hour` above; only the split differs | As for `alert_episodes_per_ue_hour` |
+| `cell_holdout_alert_episodes_per_rlf` | Same as `alert_episodes_per_rlf` above, on the cell hold-out split | See `alert_episodes_per_rlf` above; only the split differs | As for `alert_episodes_per_rlf` |
 
 **Details and formulas**
 
@@ -759,21 +759,21 @@ For the metrics below, the **true positive (TP)** is a positive row that is flag
 - **Formula:** `lead = t_failure - (time of the first alert in [t_failure - horizon, t_failure))`; `median_lead_s = median(lead over the caught events)`.
 - **Range:** 1 s to `horizon` s (1 to 30 at a 30 s horizon, 1 to 5 at 5 s). It is NaN if no event is caught in the fold.
 
-**`alert_episodes_per_ue_hour`**
-- **What it measures:** the alert workload: how many separate alert bursts a UE produces per hour, counting true and false alerts together. It shows how many alarms an operator would see.
-- **Calculation:** for each UE, sort its alert times and merge alerts that are within one `horizon` of each other: the episodes are 1 plus the number of gaps larger than the horizon. Sum the episodes over UEs and divide by the test rows divided by 3,600 (the UE-hours).
-- **Formula:** `episodes(UE) = 1 + (number of gaps between consecutive alert times larger than horizon)`; `alert_episodes_per_ue_hour = sum of episodes(UE) over UEs / (test rows / 3600)`.
-- **Better:** **closest to the actual RLF rate of the test set**, which is 5.4 per UE-hour in the default run. Not simply lower: far above it means more alert bursts than failures, and far below it means failures with no alert.
-- **Range:** 0 to about 3,600 / (`horizon` + 1), for example 116 at 30 s. 0 is not a goal by itself, since it also means no alerts at all.
+**`alert_episodes_per_rlf`**
+- **What it measures:** the alert workload compared with the real number of failures: how many separate alert bursts the model produces for each actual RLF event, counting true and false alerts together. It shows how many alarms an operator would see per real failure.
+- **Calculation:** for each UE, sort its alert times and merge alerts that are within one `horizon` of each other: the episodes are 1 plus the number of gaps larger than the horizon. Sum the episodes over UEs and divide by the number of RLF events in the same test rows. Both counts cover the same UE-hours, so this equals predicted alert episodes per UE-hour / actual RLF episodes per UE-hour.
+- **Formula:** `episodes(UE) = 1 + (number of gaps between consecutive alert times larger than horizon)`; `alert_episodes_per_rlf = sum of episodes(UE) over UEs / number of RLF events`.
+- **Better:** **closest to 1.0**, one alert burst per failure. Not simply lower: far above 1 means more alert bursts than failures, and far below 1 means failures with no alert.
+- **Range:** 0 upwards. 0 is not a goal by itself, since it means no alerts at all. It is NaN, and not logged, if the test rows contain no RLF event.
 
 **`infer_us_per_sample`**
 - **What it measures:** the cost of scoring, in microseconds per row.
 - **Calculation:** wall-clock time of the model's `score` call on the test rows (`time.perf_counter`) divided by the number of rows, times 1,000,000. It excludes the cost of computing the features, and it varies from run to run with the machine's load.
 - **Range:** above 0, with no upper limit; it depends on the machine and its load.
 
-**The `cell_holdout_*` metrics** repeat the five metrics above, with the same definitions, formulas and ranges, and differ only in the data they use: the **cell hold-out split**, where the model is trained on about 75% of the cells in the early period (before 70% of the time) and tested on the other 25% of the cells in the later period. The alert threshold of `cell_holdout_recall_at_1pct_fpr`, `cell_holdout_event_recall`, `cell_holdout_median_lead_s` and `cell_holdout_alert_episodes_per_ue_hour` is the 99th percentile of the hold-out cells' own normal rows. A metric that is NaN, such as `cell_holdout_median_lead_s` when no event is caught, is not logged. They are logged to MLflow only; the terminal table shows just `cell_holdout_pr_auc`. There is no `cell_holdout_infer_us_per_sample`, because inference time is measured only in the time folds. Compare each `cell_holdout_*` value with its time-fold counterpart: a big drop on unseen cells means the model depends on cell-specific patterns.
+**The `cell_holdout_*` metrics** repeat the five metrics above, with the same definitions, formulas and ranges, and differ only in the data they use: the **cell hold-out split**, where the model is trained on about 75% of the cells in the early period (before 70% of the time) and tested on the other 25% of the cells in the later period. The alert threshold of `cell_holdout_recall_at_1pct_fpr`, `cell_holdout_event_recall`, `cell_holdout_median_lead_s` and `cell_holdout_alert_episodes_per_rlf` is the 99th percentile of the hold-out cells' own normal rows. A metric that is NaN, such as `cell_holdout_median_lead_s` when no event is caught, is not logged. They are logged to MLflow only; the terminal table shows just `cell_holdout_pr_auc`. There is no `cell_holdout_infer_us_per_sample`, because inference time is measured only in the time folds. Compare each `cell_holdout_*` value with its time-fold counterpart: a big drop on unseen cells means the model depends on cell-specific patterns.
 
-**Which metrics depend on `TARGET_FPR`:** `recall_at_1pct_fpr`, `event_recall`, `median_lead_s` and `alert_episodes_per_ue_hour`, and their `cell_holdout_*` versions, all use the alert threshold, so they change when `TARGET_FPR` changes. `pr_auc`, `cell_holdout_pr_auc` and `infer_us_per_sample` do not.
+**Which metrics depend on `TARGET_FPR`:** `recall_at_1pct_fpr`, `event_recall`, `median_lead_s` and `alert_episodes_per_rlf`, and their `cell_holdout_*` versions, all use the alert threshold, so they change when `TARGET_FPR` changes. `pr_auc`, `cell_holdout_pr_auc` and `infer_us_per_sample` do not.
 
 The column name `recall_at_1pct_fpr` is fixed in the code and matches the current `TARGET_FPR = 0.01`. If `TARGET_FPR` is changed (for example to 0.02), the name stays the same but the value then refers to the new rate.
 
@@ -1178,7 +1178,7 @@ This section sketches how the experiment could become a **predictive service ass
 | --- | --- | --- |
 | 1. Ingestion | E2-KPM streams and O1 files into a message bus and a time-series store | Replaces `RLF_synthetic_data.py`; produces the same per-UE, per-second table |
 | 2. Stream feature builder | Computes the rolling features per UE as data arrives, with the same code and `FEATURE_VERSION` as training | `RLF_features.py`, adapted from batch to streaming. Training and serving must share the feature definitions to avoid skew |
-| 3. Model serving | Loads the registered model, scores each UE-second, applies a fixed threshold, merges alerts within one horizon into one episode | `RLF_train.py` models, the model logged to MLflow, the episode logic already used in the `alert_episodes_per_ue_hour` metric |
+| 3. Model serving | Loads the registered model, scores each UE-second, applies a fixed threshold, merges alerts within one horizon into one episode | `RLF_train.py` models, the model logged to MLflow, the episode logic already used in the `alert_episodes_per_rlf` metric |
 | 4. Alert and KPI store | Keeps scores, alerts and later outcomes (did an RLF follow?) | New. Needed for monitoring and for retraining labels |
 | 5. Training pipeline | Scheduled retraining and evaluation with the same time-ordered folds, then promotion in the MLflow registry | `RLF_train.py`, with real data in place of the synthetic generator |
 

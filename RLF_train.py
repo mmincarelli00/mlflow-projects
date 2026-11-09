@@ -430,7 +430,10 @@ def evaluate(te_df, y, s, horizon_s, thr):
     # Alerts merged into episodes: consecutive alert seconds are ONE alert.
     episodes = sum(1 + int((np.diff(a) > horizon_s).sum())
                    for a in alert_times.values() if a.size)
-    out["alert_episodes_per_ue_hour"] = episodes / (len(te_df) / 3600.0)
+    # Ratio of alert episodes to actual RLF events over the same test rows
+    # (the per-UE-hour normalisation cancels). Ideal: about 1.0.
+    out["alert_episodes_per_rlf"] = (episodes / len(events) if len(events)
+                                     else np.nan)
     return out
 
 
