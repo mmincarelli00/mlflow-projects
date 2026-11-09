@@ -44,10 +44,10 @@
     - [How the GRU reads its input: window, channels, batch and epoch](#how-the-gru-reads-its-input-window-channels-batch-and-epoch)
     - [Tabular models versus the sequence model](#tabular-models-versus-the-sequence-model)
 - [Results of the comparison tests](#results-of-the-comparison-tests)
-  - [5 s horizon (positive rate 0.752%)](#5-s-horizon-positive-rate-0752)
-  - [30 s horizon (positive rate 4.488%), model seed 42](#30-s-horizon-positive-rate-4488-model-seed-42)
-  - [Repeat runs at 30 s: GRU window 60 and model seed 40](#repeat-runs-at-30-s-gru-window-60-and-model-seed-40)
+  - [Time folds, 30 s horizon (positive rate 4.488%)](#time-folds-30-s-horizon-positive-rate-4488)
+  - [Cell hold-out, 30 s horizon](#cell-hold-out-30-s-horizon)
   - [What the tests show](#what-the-tests-show)
+  - [Earlier results (old threshold method)](#earlier-results-old-threshold-method)
 - [Conclusions and caveats](#conclusions-and-caveats)
 - [Next steps](#next-steps)
 - [From experiment to a service assurance application](#from-experiment-to-a-service-assurance-application)
@@ -1156,15 +1156,55 @@ The tabular models therefore do **not** predict from a single raw sample: their 
 
 ## Results of the comparison tests
 
-> **These tables predate two changes to `RLF_train.py`.** They were produced when the alert threshold was taken from the test fold's own normal rows (so the false-alarm rate was exactly 1%) and the models were fitted on the whole training period, and the "Alert episodes / UE-hour" column is the old metric `alert_episodes_per_ue_hour`. The code now sets the threshold on a validation part of each training period, fits the models on the rest, and reports `alert_episodes_per_rlf` and `realized_fpr`. A new run gives different numbers, so these tables are not directly comparable with it and should be regenerated.
+> **Which run produced these tables?** The latest full run, on 9 November 2026, with the current defaults of `RLF_train.py`: 30 s horizon, `TARGET_FPR = 0.01`, `--val-frac 0.2`, model seed 42 (`SEED`), GRU window 60 s and 12 epochs. The alert threshold is set on the validation part of each training period and the models are fitted on the rest. The full tables, with every model's gap to the best one, are in the run `comparison-h30s` (run ID `c0d0ba95e4134ec8ab5079a4b278aeb2`) of the `oran-rlf-prediction` experiment, in the artifacts `model_comparison.*` and `model_comparison_differences.*`. Older results, produced before the threshold calibration changed, are kept [at the end of this chapter](#earlier-results-old-threshold-method) and are not directly comparable.
 
-> **Which settings produced these tables?** The current defaults in `RLF_train.py` (`SEED = 42`, `TARGET_FPR = 0.01`), except where stated: the seed-40 runs changed the model seed. A full re-run on 2 November 2026 with these defaults (GRU window 60 s) reproduced the 30 s tables exactly for every model except inference time, which varies from run to run with machine load, so the quality metrics are deterministic for a fixed data and model seed.
+XGBoost has the best PR-AUC and the best overall mean rank, but the three supervised models (XGBoost, GRU, HistGradientBoosting) are within 0.014 PR-AUC of each other, which is about the size of single-seed noise. The GRU lead of about 0.03 seen in the earlier runs did not appear in this run.
 
-A supervised GRU scores highest on PR-AUC at the 30 s horizon, but only by about 0.03, and several other differences shrink or reverse when the seed changes.
+All models use the same synthetic dataset (60 UEs × 3,600 s = 216,000 rows, 105 features, 325 RLF events, data seed 7) and the same folds.
 
-All runs use the same synthetic dataset (60 UEs × 3,600 s = 216,000 rows, 105 features, 325 RLF events, data seed 7) and the same folds. The model seed is 42 unless stated.
+### Time folds, 30 s horizon (positive rate 4.488%)
 
-### 5 s horizon (positive rate 0.752%)
+Means over the 4 time folds. **Bold** marks the best model for each metric: the highest value, the lowest for inference time, and the closest to the target for realized FPR (1%) and alert episodes per RLF (1.0). Mean rank is each model's average rank over these 7 metrics (1 = best, 5 = worst).
+
+| Model | PR-AUC | Recall at 1% FPR | Realized FPR | Event recall | Median lead (s) | Alert episodes / RLF | Inference (µs/row) | Mean rank |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Robust z-score | 0.346 | 0.165 | 0.92% | **0.766** | 6.00 | 1.365 | **0.30** | 3.00 |
+| Isolation Forest | 0.236 | 0.096 | **0.94%** | 0.554 | 4.63 | **0.996** | 14.6 | 3.57 |
+| HistGradientBoosting | 0.410 | 0.216 | 0.74% | 0.680 | 14.13 | 1.066 | 26.8 | 3.43 |
+| XGBoost | **0.424** | **0.229** | 0.79% | 0.637 | 15.75 | 1.047 | 3.62 | **2.29** |
+| GRU (60 s window) | 0.414 | 0.218 | 0.90% | 0.708 | **15.88** | 1.160 | 35.3 | 2.71 |
+
+### Cell hold-out, 30 s horizon
+
+One split: trained on about 75% of the cells in the early period, tested on the other cells in the later period. The test rows contain 29 RLF events, so one event moves event recall by about 3.4 points.
+
+| Model | PR-AUC | Recall at 1% FPR | Realized FPR | Event recall | Median lead (s) | Alert episodes / RLF |
+| --- | --- | --- | --- | --- | --- | --- |
+| Robust z-score | 0.412 | 0.198 | 1.10% | **0.931** | 5.0 | 1.345 |
+| Isolation Forest | 0.246 | 0.102 | 1.33% | 0.586 | 5.0 | 1.069 |
+| HistGradientBoosting | 0.522 | **0.286** | **1.02%** | 0.690 | 13.5 | **1.034** |
+| XGBoost | 0.532 | 0.280 | 0.89% | 0.828 | 13.5 | 1.138 |
+| GRU (60 s window) | **0.546** | 0.258 | 0.60% | 0.621 | **19.5** | 0.724 |
+
+### What the tests show
+
+- **Model ranking:** on PR-AUC, XGBoost (0.424) is ahead of the GRU (0.414) and HistGradientBoosting (0.410), then the z-score (0.346) and Isolation Forest (0.236). The gaps between the three supervised models (0.010 and 0.014) are close to the 0.01 noise level given in the caveats, so they are effectively tied. Against chance (a PR-AUC equal to the 4.488% positive rate), XGBoost is about 9.4 times better.
+- **Change from the earlier runs:** the GRU (60 s window) went from 0.432 to 0.414 PR-AUC and XGBoost from 0.406 to 0.424, so the earlier GRU lead is gone. The models are now fitted on about 80% of each training period instead of all of it, and a single run cannot separate that effect from seed noise.
+- **At a fixed alert budget:** recall at 1% FPR is 0.216 to 0.229 for the supervised models. This is lower than in the earlier tables (0.25 to 0.29) partly because the threshold set on validation data gives a realized false-alarm rate of 0.74% to 0.94% on the test rows, below the 1% target, so the models raise fewer alerts.
+- **Warning time:** the GRU (15.9 s) and XGBoost (15.8 s) alert earliest, then HistGradientBoosting (14.1 s), far ahead of the z-score (6.0 s) and Isolation Forest (4.6 s).
+- **Event recall and alert episodes must be read together:** the z-score has the highest event recall (0.766) but raises 1.37 alert episodes per RLF; at a 30 s horizon chance alerts alone catch many events. Isolation Forest is closest to 1.0 episodes per RLF but catches only 55% of the events, so many of its episodes are false alarms. XGBoost (1.05 episodes per RLF, 0.64 event recall) and the GRU (1.16, 0.71) are the better balance.
+- **Unseen cells:** all supervised models score a higher PR-AUC on the held-out cells (0.52 to 0.55) than in the time folds, as in the earlier runs, so there is no sign of dependence on cell-specific patterns. The GRU has the best hold-out PR-AUC (0.546) and lead time (19.5 s), but its threshold is conservative there (0.60% realized FPR, 0.72 episodes per RLF) and it has the lowest event recall of the supervised models (0.621). With only 29 events these differences are noisy.
+- **Cost:** XGBoost scores a row in 3.6 µs, against 26.8 µs for HistGradientBoosting and 35.3 µs for the GRU, about 10 times slower than XGBoost (timings vary between runs with machine load).
+- **Mean rank:** XGBoost (2.29) is best overall, then the GRU (2.71), the z-score (3.00), HistGradientBoosting (3.43) and Isolation Forest (3.57). The mean rank weighs all 7 metrics equally and ignores the size of the gaps: the z-score ranks third thanks to its fastest inference and highest event recall, and HistGradientBoosting is pushed down by its inference time and the realized FPR farthest from the target. So read it together with the tables, not alone.
+
+### Earlier results (old threshold method)
+
+<details>
+<summary>Tables from runs made before the threshold calibration changed (not comparable with the tables above)</summary>
+
+These were produced when the alert threshold was taken from the test fold's own normal rows (so the false-alarm rate was exactly 1%) and the models were fitted on the whole training period. The "Alert episodes / UE-hour" column is the old metric `alert_episodes_per_ue_hour`, which has been replaced by `alert_episodes_per_rlf`. Settings: `SEED = 42`, `TARGET_FPR = 0.01`, except where stated.
+
+#### 5 s horizon (positive rate 0.752%)
 
 | Model | PR-AUC | Recall at 1% FPR | Event recall | Median lead (s) | Alert episodes / UE-hour | Inference (µs/row) | Cell hold-out PR-AUC |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -1175,7 +1215,7 @@ All runs use the same synthetic dataset (60 UEs × 3,600 s = 216,000 rows, 105 f
 
 Boosting beats the z-score, which beats Isolation Forest. XGBoost and HistGradientBoosting are effectively tied. Against chance (a PR-AUC equal to the positive rate), XGBoost is about 40 times better.
 
-### 30 s horizon (positive rate 4.488%), model seed 42
+#### 30 s horizon (positive rate 4.488%), model seed 42
 
 | Model | PR-AUC | Recall at 1% FPR | Event recall | Median lead (s) | Alert episodes / UE-hour | Inference (µs/row) | Cell hold-out PR-AUC |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -1187,7 +1227,7 @@ Boosting beats the z-score, which beats Isolation Forest. XGBoost and HistGradie
 
 The longer horizon gives much more useful warning: the boosting models alert about 16 to 18 s ahead, against about 6 s for the z-score. Lift over chance falls to about 9× for XGBoost. Event recall is not comparable across horizons, because at 30 s chance alerts alone catch many events (the z-score reaches 0.792).
 
-### Repeat runs at 30 s: GRU window 60 and model seed 40
+#### Repeat runs at 30 s: GRU window 60 and model seed 40
 
 | Run | PR-AUC | Recall at 1% FPR | Event recall | Median lead (s) | Alert episodes / UE-hour | Inference (µs/row) | Cell hold-out PR-AUC |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -1199,37 +1239,32 @@ The longer horizon gives much more useful warning: the boosting models alert abo
 
 The z-score row is identical in every run (0.346, 0.185, 0.792, 6.25, 7.95, cell hold-out 0.413) because it has no randomness. The window used in the seed-40 GRU run was not confirmed from the log.
 
-### What the tests show
-
-- **Model ranking:** on PR-AUC, the GRU (0.432 to 0.441) is ahead of XGBoost and HistGradientBoosting (0.403 to 0.415), then the z-score (0.346), then Isolation Forest (0.238 to 0.244). The GRU lead of about 0.03 appears in all three GRU runs and is larger than how far each boosting model's PR-AUC moved with the seed (0.002 to 0.012).
-- **At a fixed alert budget the gain is small:** GRU recall at 1% FPR is 0.275 to 0.286 against 0.252 to 0.273 for boosting.
-- **Seed noise:** changing only the model seed moved XGBoost cell hold-out from 0.549 to 0.518, XGBoost lead from 17.6 s to 15.3 s, XGBoost recall from 0.268 to 0.252, and HistGradientBoosting PR-AUC from 0.415 to 0.403 (probably because its early stopping uses a random validation split).
-- **Claims that did not hold up:** that XGBoost gives the longest warning, that the GRU generalizes better to unseen cells, and that the GRU has the best event recall (it ranged from 0.715 to 0.801 across runs).
-- **Cost:** the GRU scores a row in 17 to 44 µs against 2.0 to 3.2 µs for XGBoost (timings vary between runs with machine load), and needs PyTorch.
+</details>
 
 ## Conclusions and caveats
 
-On this synthetic data, supervised learning clearly beats the unsupervised methods, the GRU adds a small unproven gain over gradient boosting, and XGBoost remains the sensible default.
+On this synthetic data, supervised learning clearly beats the unsupervised methods, the GRU and the two boosting models are effectively tied, and XGBoost remains the sensible default: it has the best PR-AUC and mean rank in the latest run and scores about 10 times faster than the GRU.
 
 **What the evidence supports**
 
-- Supervised models (boosting, GRU) beat the z-score and Isolation Forest on PR-AUC and on recall at a fixed false-alarm rate.
-- XGBoost and HistGradientBoosting are equivalent in accuracy; XGBoost is faster and also offers a feature-importance report after training, for inspection (it plays no part in the training or the metrics).
-- A 30 s horizon gives roughly 15 to 18 s of lead time, against 4 to 6 s at a 5 s horizon, at the cost of lower lift over chance.
-- The GRU improves PR-AUC by about 0.03, but changes the alert-budget results by only 0.01 to 0.03 and scores about 7 to 17 times slower than XGBoost.
+- Supervised models (boosting, GRU) beat the z-score and Isolation Forest on PR-AUC (0.410 to 0.424 against 0.346 and 0.236) and on recall at a fixed false-alarm rate (0.216 to 0.229 against 0.165 and 0.096), both in the time folds and on unseen cells.
+- XGBoost and HistGradientBoosting are close in accuracy (0.424 and 0.410 PR-AUC); XGBoost is about 7 times faster in the latest run and also offers a feature-importance report after training, for inspection (it plays no part in the training or the metrics).
+- A 30 s horizon gives about 14 to 16 s of lead time with the supervised models, against 4 to 5 s at a 5 s horizon in the earlier runs, at the cost of lower lift over chance. The 5 s horizon has not yet been re-run with the current threshold method.
+- The GRU shows no PR-AUC gain in the latest run: it is 0.010 below XGBoost, within noise, after leading by about 0.03 in the earlier runs. It has the best hold-out PR-AUC (0.546) and lead time, but scores about 10 times slower than XGBoost and needs PyTorch.
+- No model depends on cell-specific patterns: every supervised model scores a higher PR-AUC on the held-out cells than in the time folds.
 
 **Caveats**
 
 - **Synthetic data.** The generator is simple and has about 5.4 RLFs per UE-hour, far above a real network, so absolute numbers are optimistic. About 11% of RLFs are sudden and cap event recall near 89%.
-- **Limited variation.** All runs share one dataset (data seed 7, 325 events). The seed-40 run changed only model randomness. Differences below about 0.01 in PR-AUC, 0.03 in recall or cell hold-out, and 2 s in lead time should be treated as noise.
-- **Threshold calibration.** The alert threshold is set on a time-based validation part of each training period and applied unchanged to the test rows, so the test labels no longer influence it. The costs are that the models are fitted on about 80% of each training period, and that the false-alarm rate on the test rows (`realized_fpr`) is only close to 1% and moves with any drift between the validation and test periods. The threshold rests on a few hundred validation rows above the 99th percentile, and neighbouring seconds are correlated, so it is noisy.
+- **Limited variation.** All runs share one dataset (data seed 7, 325 events), and the latest results come from a single model seed (42). The earlier seed-40 run changed only model randomness. The cell hold-out test rows hold only 29 events, so its event recall moves by about 3.4 points per event. Differences below about 0.01 in PR-AUC, 0.03 in recall or cell hold-out, and 2 s in lead time should be treated as noise.
+- **Threshold calibration.** The alert threshold is set on a time-based validation part of each training period and applied unchanged to the test rows, so the test labels no longer influence it. The costs are that the models are fitted on about 80% of each training period, and that the false-alarm rate on the test rows (`realized_fpr`) is only close to 1% and moves with any drift between the validation and test periods. In the latest run it was 0.74% to 0.94% in the time folds and 0.60% to 1.33% on the held-out cells, which lowers recall at the target rate compared with the earlier tables. The threshold rests on a few hundred validation rows above the 99th percentile, and neighbouring seconds are correlated, so it is noisy.
 - **Unequal inputs.** The tabular models see 105 engineered features; the GRU sees 13 raw channels, and a 60 s window gives it a longer history than any rolling feature except `secs_since_a3`.
 - **`TARGET_FPR` consistency.** The metric name `recall_at_1pct_fpr` is fixed and matches the current `TARGET_FPR = 0.01`. If the constant is changed, re-run all models so the compared runs use the same false-alarm rate.
 - **GRU logging.** Recent MLflow versions default to a PyTorch format that needs an input example, so the code requests pickle and falls back to saving the weights. The pickle route worked on the author's machine; the fallback path has not been tested.
 
 ## Next steps
 
-The most useful next step is a multi-seed comparison, because the current GRU advantage is within what a single seed can produce.
+The most useful next step is a multi-seed comparison, because the gaps between XGBoost, HistGradientBoosting and the GRU (0.014 PR-AUC or less) are within what a single seed can produce, and the GRU's earlier lead disappeared from one run to the next.
 
 1. **Repeat with 3 to 5 model seeds and several data seeds (`--seed`)** and report mean and standard deviation, so a difference can be judged against the spread.
 2. **Add a `--target-fpr` option** and make the metric name follow its value. Also compare `--val-frac` values (for example 0.1, 0.2 and 0.3) to see how stable the threshold and `realized_fpr` are.
