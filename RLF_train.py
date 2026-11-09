@@ -519,6 +519,7 @@ def run_family(Family, df, feat_cols, horizon_s, dataset_tag, n_splits, val_frac
             return None
         summary = mean_metrics(folds)
         log_metrics(summary)
+        summary["run_id"] = mlflow.active_run().info.run_id
         # Per-fold threshold and realized FPR: an artifact, not metrics.
         mlflow.log_dict(fold_info, "fold_thresholds.json")
  
@@ -531,7 +532,7 @@ def run_family(Family, df, feat_cols, horizon_s, dataset_tag, n_splits, val_frac
                 ch = evaluate(df.iloc[te], y[te], model.score(X[te], idx=te),
                               horizon_s, thr)
                 log_metrics(ch, prefix="cell_holdout_")
-                summary["cell_holdout_pr_auc"] = ch["pr_auc"]
+                summary.update({"cell_holdout_" + k: v for k, v in ch.items()})
  
         # Final model: same fit/validation split over all data (no refit on
         # 100%), so the stored threshold matches the stored model's scores.
@@ -560,6 +561,145 @@ def run_family(Family, df, feat_cols, horizon_s, dataset_tag, n_splits, val_frac
         summary["model"] = Family.name
         return summary
  
+# ------------------------------------------------------------- comparison ---
+# How to read each metric when comparing models: "max" = higher is better,
+# "min" = lower is better, a number = the closer to that target the better.
+METRIC_GOALS = {"pr_auc": "max", "recall_at_1pct_fpr": "max",
+                "realized_fpr": TARGET_FPR, "event_recall": "max",
+                "median_lead_s": "max", "alert_episodes_per_rlf": 1.0,
+                "infer_us_per_sample": "min"}
+METRIC_GOALS.update({"cell_holdout_" + k: v for k, v in METRIC_GOALS.items()
+                     if k != "infer_us_per_sample"})
+TERMINAL_COLS = ["pr_auc", "recall_at_1pct_fpr", "realized_fpr", "event_recall",
+                 "median_lead_s", "alert_episodes_per_rlf",
+                 "infer_us_per_sample", "cell_holdout_pr_auc"]
+
+
+def compare_models(results):
+    """Wide table (one row per model, one column per metric) and long table
+    (one row per model and metric) with each model's gap to the best model.
+
+    delta_vs_best = value - best value; pct_vs_best = that gap in % of the best
+    value; for target metrics (realized_fpr, alert_episodes_per_rlf) the best
+    model is the one closest to the target and distance_to_target is also
+    given. rank 1 = best; NaN values (e.g. no event caught) are not ranked."""
+    wide = pd.DataFrame(results).set_index("model")
+    wide = wide.reindex(columns=[c for c in METRIC_GOALS if c in wide.columns]
+                        + ["run_id"])
+    rows = []
+    for metric, goal in METRIC_GOALS.items():
+        if metric not in wide.columns:
+            continue
+        v = wide[metric].astype(float)
+        if goal == "max":
+            key = -v
+        elif goal == "min":
+            key = v
+        else:
+            key = (v - goal).abs()
+        rank = key.rank(method="min")
+        best_model = key.idxmin() if key.notna().any() else None
+        best = v[best_model] if best_model is not None else np.nan
+        for model, val in v.items():
+            delta = val - best
+            rows.append({
+                "metric": metric,
+                "goal": goal if isinstance(goal, str) else f"target={goal:g}",
+                "model": model, "value": val,
+                "rank": rank[model], "best_model": best_model,
+                "best_value": best, "delta_vs_best": delta,
+                "pct_vs_best": (100 * delta / abs(best)
+                                if best and np.isfinite(best) else np.nan),
+                "distance_to_target": (abs(val - goal)
+                                       if not isinstance(goal, str) else np.nan),
+            })
+    return wide, pd.DataFrame(rows)
+
+
+def log_comparison(results, horizon_s, dataset_tag):
+    """Log one extra MLflow run, "comparison-h<horizon>s", holding the
+    side-by-side table of all models and their differences. Returns the wide
+    table."""
+    wide, long = compare_models(results)
+    metric_cols = [c for c in wide.columns if c != "run_id"]
+    # Rank per model averaged over the time-fold metrics (lower = better).
+    fold_metrics = [m for m in metric_cols if not m.startswith("cell_holdout_")]
+    mean_rank = (long[long["metric"].isin(fold_metrics)]
+                 .groupby("model")["rank"].mean().reindex(wide.index))
+
+    with mlflow.start_run(run_name=f"comparison-h{horizon_s}s"):
+        mlflow.set_tags({"dataset": dataset_tag, "task": "rlf_prediction",
+                         "run_type": "model_comparison",
+                         "horizon_s": horizon_s,
+                         "feature_version": FEATURE_VERSION,
+                         "models": ",".join(wide.index)})
+        mlflow.log_params({"n_models": len(wide), "target_fpr": TARGET_FPR})
+        wide_out = wide.reset_index().assign(mean_rank=mean_rank.to_numpy())
+        # log_table: shown in the run's Artifacts tab and queryable across runs
+        # with mlflow.load_table("model_comparison.json").
+        mlflow.log_table(wide_out, "model_comparison.json")
+        mlflow.log_table(long, "model_comparison_differences.json")
+        mlflow.log_text(wide_out.to_csv(index=False), "model_comparison.csv")
+        mlflow.log_text(long.to_csv(index=False),
+                        "model_comparison_differences.csv")
+        mlflow.log_text(_comparison_html(wide, long, mean_rank),
+                        "model_comparison.html")
+        # Best model per metric as tags, e.g. best.pr_auc = xgboost.
+        best = long.drop_duplicates("metric").set_index("metric")["best_model"]
+        mlflow.set_tags({f"best.{m}": b for m, b in best.items() if b})
+        if mean_rank.notna().any():
+            mlflow.set_tag("best.overall_mean_rank", mean_rank.idxmin())
+        # Every model's value as a metric of this run, for charts in the UI.
+        for model, row in wide[metric_cols].iterrows():
+            log_metrics(row.to_dict(), prefix=f"{model}.")
+    return wide
+
+
+def _comparison_html(wide, long, mean_rank):
+    """Readable HTML report (MLflow previews .html artifacts): values with the
+    best model per metric in bold, then the gap of every model to the best."""
+    fmt = lambda x: "" if pd.isna(x) else f"{x:.4g}"
+    metric_cols = [c for c in wide.columns if c != "run_id"]
+    best = long.drop_duplicates("metric").set_index("metric")["best_model"]
+    goal = long.drop_duplicates("metric").set_index("metric")["goal"]
+
+    head = "".join(f"<th>{m}<br><small>{goal[m]}</small></th>"
+                   for m in metric_cols)
+    body = ""
+    for model, row in wide.iterrows():
+        cells = "".join(
+            f"<td><b>{fmt(row[m])}</b></td>" if best.get(m) == model
+            else f"<td>{fmt(row[m])}</td>" for m in metric_cols)
+        body += (f"<tr><th>{model}</th>{cells}"
+                 f"<td>{fmt(mean_rank[model])}</td></tr>")
+    values = (f"<table><tr><th>model</th>{head}<th>mean rank<br><small>time "
+              f"folds</small></th></tr>{body}</table>")
+
+    diff = long.pivot(index="model", columns="metric",
+                      values="delta_vs_best").reindex(index=wide.index,
+                                                      columns=metric_cols)
+    body = "".join(
+        f"<tr><th>{model}</th>"
+        + "".join(f"<td>{fmt(row[m])}</td>" for m in metric_cols) + "</tr>"
+        for model, row in diff.iterrows())
+    deltas = (f"<table><tr><th>model</th>"
+              + "".join(f"<th>{m}</th>" for m in metric_cols)
+              + f"</tr>{body}</table>")
+
+    style = ("body{font-family:sans-serif;font-size:13px}"
+             "table{border-collapse:collapse;margin-bottom:24px}"
+             "th,td{border:1px solid #ccc;padding:4px 8px;text-align:right}"
+             "th{background:#f3f3f3}")
+    return (f"<html><head><style>{style}</style></head><body>"
+            f"<h2>Model comparison: metric values</h2>"
+            f"<p>Time-fold metrics are means over the folds; cell_holdout_* "
+            f"come from one unseen-cell split. Bold = best model for that "
+            f"metric (goal under the name: max, min or closest to a "
+            f"target).</p>{values}"
+            f"<h2>Difference from the best model (value - best)</h2>"
+            f"{deltas}</body></html>")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--horizon", type=int, default=30, help="prediction horizon, s")
@@ -597,8 +737,11 @@ def main():
     results = [r for r in (run_family(F, df, feat_cols, args.horizon, tag,
                                       args.n_splits, args.val_frac)
                            for F in FAMILIES) if r]
-    table = pd.DataFrame(results).set_index("model").round(3)
-    print("\n" + table.to_string())
+    if not results:
+        print("no model produced results; comparison not logged")
+        return
+    table = log_comparison(results, args.horizon, tag)
+    print("\n" + table[TERMINAL_COLS].round(3).to_string())
 
 
 if __name__ == "__main__":
