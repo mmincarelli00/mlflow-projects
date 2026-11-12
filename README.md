@@ -1456,7 +1456,7 @@ The faster loop handles the individual at-risk UE; the slower loop uses accumula
 
 ### Guardrails and safety
 
-An automated loop can make a network worse faster than a human could, so safety is part of the design, not an add-on.
+An automated loop can make a network change faster than a human could, so safety is part of the design, not an add-on.
 
 - **Scope limits:** which cells, vendors and parameters the loop may touch; protected cells (emergency services, critical customers) excluded.
 - **Rate limits:** maximum number of actions per cell, per hour and per day, and a minimum interval between changes to the same parameter.
