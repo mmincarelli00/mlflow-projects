@@ -60,6 +60,7 @@
   - [Productization roadmap](#productization-roadmap)
   - [Risks and open questions](#risks-and-open-questions)
 - [Evolving into an automated closed loop with the SMO](#evolving-into-an-automated-closed-loop-with-the-smo)
+  - [What the experiment provides today](#what-the-experiment-provides-today)
   - [From advisory to autonomous](#from-advisory-to-autonomous)
   - [The closed loop](#the-closed-loop)
   - [Two nested loops](#two-nested-loops)
@@ -1377,13 +1378,26 @@ A pragmatic path is to start as an **advisory service on O1 and trace data**, th
 
 The previous section ends with an advisory service and an optional closed loop. This section describes how to evolve it into a **closed-loop automation** capability inside a fully automated network, with the SMO (Service Management and Orchestration) as the orchestrator. It is a design proposal; nothing here has been built or validated on real network data.
 
+### What the experiment provides today
+
+The repository covers the prediction and alert-decision parts of the loop. Everything after the alert is still to be built.
+
+| Closed-loop need | What the repository provides now | What is still missing |
+| --- | --- | --- |
+| **Prediction** | A risk score per UE-second from five model families; XGBoost has the best PR-AUC and mean rank in the latest 30 s run | A streaming feature builder, per-UE E2 data, validation on real data |
+| **Alert decision** | A fixed alert threshold per model, set on a time-based validation part (`final_threshold`, `alert_threshold.json`), and the false-alarm rate it then gave on the test rows (`realized_fpr`, `fold_thresholds.json`) | Per-action operating points (`TARGET_FPR` is a single constant), recalibration on live data |
+| **One alert per failure** | Alerts within one horizon merge into one episode; `alert_episodes_per_rlf` measures the result (ideal 1.0; 1.05 to 1.16 for the supervised models) | Persistence and de-duplication rules per action, alerts at cell level |
+| **Model packaging** | One MLflow run per family with its model (a `pyfunc` for the z-score), `features.json` with the `FEATURE_VERSION`, and the threshold file; a `comparison-h<horizon>s` run that ranks the models | Registry stages, packaging as an xApp or rApp bundle, onboarding through the SMO |
+| **Verification metrics** | `realized_fpr`, `alert_episodes_per_rlf`, `event_recall` and `median_lead_s` | Outcomes of real actions, control groups, action labels |
+| **Decision and action** | Nothing: the experiment only predicts | Policy engine, E2-RC, A1 and O1 adapters, guardrails, rollback |
+
 ### From advisory to autonomous
 
 Closed-loop automation is usually adopted in steps, giving the system more authority as trust in its predictions grows.
 
 | Level | Behavior | Human role | Typical entry criteria |
 | --- | --- | --- | --- |
-| **0. Observe** | Predict and log only (shadow mode) | None | Stable false-alarm rate and recall over several weeks |
+| **0. Observe** | Predict and log only (shadow mode) | None | Stable false-alarm rate and recall over several weeks (for example `realized_fpr` close to its target and `alert_episodes_per_rlf` near 1.0 on live data) |
 | **1. Advise** | Raise alerts with a recommended action | Decides and acts | Engineers accept the alerts and explanations |
 | **2. Approve** | Propose an action and execute it after one-click approval | Approves each action | The recommended action is correct in most reviewed cases |
 | **3. Act within guardrails** | Execute low-risk actions automatically, report after the fact | Supervises, can override | Measured benefit against a control group; rollback proven |
@@ -1405,10 +1419,10 @@ Each level is set **per action type and per scope** (a cell cluster, a vendor), 
 | Step | What happens | Where it runs |
 | --- | --- | --- |
 | **Observe** | KPIs and events arrive over E2 (fast) and O1 (slow) | Data platform in or next to the SMO |
-| **Predict** | The registered RLF model scores each UE-second and merges alerts into episodes | xApp (near-RT RIC) or rApp / SMO service |
+| **Predict** | The registered RLF model scores each UE-second, applies its stored alert threshold and merges alerts within one horizon into one episode | xApp on the near-RT RIC for per-UE scoring (or an external service on O1 and trace data in advisory use); an rApp would score cell-level aggregates with a different model |
 | **Decide** | A policy engine maps a prediction to an action and checks it against guardrails | rApp in the Non-RT RIC, with intent and policy held in the SMO |
 | **Act** | The action is sent to the RAN | E2-RC from an xApp (milliseconds to seconds), A1 policy from an rApp, or O1 configuration change through the SMO (minutes) |
-| **Verify** | Compare outcomes with the prediction and with a control group; keep or roll back | Same data platform; results stored with the alert |
+| **Verify** | Compare outcomes with the prediction and with a control group; track the false-alarm rate (`realized_fpr`) and alert episodes per RLF; keep or roll back | Same data platform; results stored with the alert, the model version and the threshold |
 
 ### Two nested loops
 
@@ -1416,7 +1430,7 @@ Closed loops work at different speeds, and each action belongs to the loop that 
 
 | Loop | Time scale | Where | Example actions |
 | --- | --- | --- | --- |
-| **Near-real-time** | 10 ms to 1 s control, with 15 to 30 s of prediction lead time | xApp on the near-RT RIC, using E2-RC | Trigger or advance a handover for at-risk UEs, change a UE's scheduling or traffic steering |
+| **Near-real-time** | 10 ms to 1 s control, with a median of about 14 to 16 s of warning at a 30 s horizon (latest run, supervised models) | xApp on the near-RT RIC, using E2-RC | Trigger or advance a handover for at-risk UEs, change a UE's scheduling or traffic steering |
 | **Non-real-time** | Seconds to hours | rApp in the Non-RT RIC and the SMO, using A1 and O1 | Adjust handover thresholds (A3 offset, hysteresis, time-to-trigger) for a cell, retune coverage or load balancing, open a ticket, trigger a field check |
 
 The faster loop handles the individual at-risk UE; the slower loop uses accumulated alerts to fix the cause (for example a cell with a persistent coverage hole or a bad neighbor relation).
@@ -1426,14 +1440,19 @@ The faster loop handles the individual at-risk UE; the slower loop uses accumula
 | SMO function | Role in the closed loop |
 | --- | --- |
 | **O1 (to every managed element)** | Source of PM, FM, trace and configuration data; channel for configuration changes in the slower loop |
-| **A1 (Non-RT RIC → near-RT RIC)** | Delivers policies (for example "limit handover changes to N per hour per cell"), registers and deploys ML models to xApps, supplies enrichment information |
+| **A1 (Non-RT RIC → near-RT RIC)** | Delivers policies (for example "limit handover changes to N per hour per cell") and enrichment information, and carries the model-management messages of the A1 AI/ML work (check the target release and vendor) |
 | **E2 (near-RT RIC ↔ O-CU / O-DU)** | Fast data and RC control used by the xApp |
 | **O2 (SMO ↔ O-Cloud)** | Deploys and scales the serving components themselves (xApps, rApps, feature builder) and the ML platform |
+| **R1 (rApps ↔ Non-RT RIC framework)** | Lets the decision and trainer rApps read data and call A1, O1 and O2 services without vendor-specific code |
 | **rApps in the Non-RT RIC** | Policy decision logic, model management, slow-loop optimization |
 | **Inventory and topology** | Cell and neighbor relations, vendor and software versions, used to scope actions and choose features |
 | **Intent / policy interface** | Operators state goals ("keep RLF rate below X per cell") instead of procedures; the loop translates them into policies and actions |
 
 **Model lifecycle in the SMO.** Training and tracking stay in the MLflow-based pipeline of this repository. A model that passes shadow testing is registered, packaged (for example as a container or xApp bundle) and **deployed through the SMO** to the near-RT RIC or to an rApp, with the model version recorded in the SMO's inventory so every action can be traced to a model.
+
+- **Ship the model, its threshold and its feature definition as one bundle.** The alert threshold is in the unit of that family's score (robust standard deviations for the z-score, a 0 to 1 anomaly score for Isolation Forest, an inflated probability-like value for the supervised models), so it cannot be moved to another model or reused after retraining. The repository already writes the threshold (`alert_threshold.json`) and the feature list (`features.json`, with `FEATURE_VERSION`) next to the model.
+- **Recalibrate on every retrain.** A retrained model gets its own threshold from the validation part of its training period, using the same time-based split with a gap of one horizon.
+- **Promote with the comparison run.** The `comparison-h<horizon>s` run ranks the candidates on each metric, with `realized_fpr` and `alert_episodes_per_rlf` judged by their distance to the target. It can serve as the promotion gate, next to the shadow-mode results.
 
 ### Guardrails and safety
 
@@ -1444,6 +1463,7 @@ An automated loop can make a network worse faster than a human could, so safety 
 - **Bounds on changes:** each parameter may move only within a safe range and by a small step.
 - **Conflict handling:** avoid conflicts with other automation (SON functions, other xApps and rApps) through a shared view of who may change which parameter, and coordination in the SMO.
 - **Verification and automatic rollback:** every action has a success test (RLF rate, drop rate, throughput) over a defined window; if it fails or any protected KPI degrades, revert.
+- **Quality gates on the model:** pause automatic actions when the live false-alarm rate or the number of alert episodes per RLF drifts far from the values measured at promotion (for example `realized_fpr` well above its target), or when input drift is detected.
 - **Kill switch and degradation:** a global and per-scope off switch; if the model, the data feed or the SMO link fails, fall back to the previous behavior and raise a fault.
 - **Human in the loop where needed:** approvals for new action types, and a review of a sample of automatic actions.
 - **Audit trail:** record the prediction, model version, policy, action, approver (or "auto"), outcome and rollback, to support troubleshooting and compliance.
@@ -1455,14 +1475,15 @@ An automated loop can make a network worse faster than a human could, so safety 
 - **Action and outcome labels.** Log each action, its context and the result. Without this the system cannot learn or be audited.
 - **Feedback effects.** Once the loop acts, the data changes (successful actions remove the failures the model was trained to predict). Retraining must account for this, for example by keeping control groups or by logging whether an action was applied.
 - **Confidence and uncertainty.** Act automatically only above a calibrated confidence, and route lower-confidence alerts to a human.
-- **Latency and freshness.** The near-real-time loop needs the feature builder and model to run within the 15 to 30 s lead time with margin; stale or missing data must suppress automatic action.
-- **Fixed threshold and alert budget.** Needed even more than for advisory use, because each false alarm now causes a real change in the network.
+- **Latency and freshness.** The near-real-time loop needs the feature builder, the model and the action to complete within the available warning time with margin. The median lead time is only about 14 to 16 s at a 30 s horizon, so about half of the caught failures are warned less than that ahead. Stale or missing data must suppress automatic action.
+- **Warning time is a distribution.** Choose the horizon per action, and judge an action by the share of events warned early enough for it to take effect, not by the median alone. Lead-time percentiles are still a next step in this README.
+- **Fixed threshold, per action.** The experiment already fixes the threshold in advance on a validation part, and the false-alarm rate it gave on the test rows was 0.74% to 0.90% in the time folds for the supervised models, against a 1% target, and 0.60% to 1.33% across all models on unseen cells. In a closed loop each false alarm causes a real change in the network, so use a stricter operating point (a lower `TARGET_FPR`) for risky actions than for notifications. `TARGET_FPR` is a single constant today (a `--target-fpr` option is a listed next step), so per-action thresholds would need that option.
 
 ### Evolution roadmap
 
 | Phase | Goal | Exit criteria |
 | --- | --- | --- |
-| **A. Close the data loop** | Log predictions, alerts and outcomes; build the verification measurements | Outcome data is complete and trusted |
+| **A. Close the data loop** | Log predictions, alerts and outcomes together with the model version and threshold; build the verification measurements | Outcome data is complete and trusted |
 | **B. Policy and recommendation engine** | Map alerts to recommended actions with rules; show them to engineers | Recommendations are accepted at an agreed rate |
 | **C. Approved actions** | Execute actions through E2-RC, A1 or O1 after approval, with logging and rollback | Rollback tested; actions verified automatically |
 | **D. Guarded automation** | Automatic low-risk actions in a pilot cluster with a control group | Measured reduction in RLFs or drops with no protected-KPI regression |
@@ -1471,7 +1492,8 @@ An automated loop can make a network worse faster than a human could, so safety 
 
 ### Risks and open questions
 
-- **Authority versus trust.** Real-data accuracy is not established; moving past level 1 before it is would risk harming the network.
+- **Authority versus trust.** Real-data accuracy is not established; moving past level 1 before it is would risk harming the network. Even on synthetic data at a 30 s horizon, the supervised models flag only about 22% of the positive rows and catch 64% to 71% of the RLF events at a 1% false-alarm budget, and about 11% of failures are sudden. The loop must never assume that a failure was prevented.
+- **Threshold drift.** The threshold is set on past data, and its false-alarm rate moved between 0.60% and 1.33% across the models and test splits. Live networks drift more, so the quality gates and periodic recalibration are part of the design.
 - **Interactions with other automation.** SON functions and other xApps and rApps may change the same parameters; conflict mitigation is a standards and vendor topic, not only a local one.
 - **Vendor support for control.** E2-RC and A1 support varies by vendor and release; many networks allow only O1 changes, which limits the loop to the slower time scale.
 - **Causal uncertainty.** A prediction does not tell whether an action helps; claiming benefit requires experiments with control groups.
