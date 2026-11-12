@@ -1471,7 +1471,19 @@ An automated loop can make a network change faster than a human could, so safety
 
 ### What changes in the models and the data
 
-- **From prediction to decision.** The experiment predicts whether an RLF will occur. A closed loop also needs to know which action helps. Start with rules over the alert and its driving KPIs (for example a rising neighbor gap points to a handover), then learn the effect of actions from logged outcomes, for example with uplift modeling or contextual bandits, introduced cautiously and with guardrails.
+- **From prediction to decision.** The experiment predicts whether an RLF will occur. A closed loop also needs to know which action helps. Start with rules over the alert and its driving KPIs (for example a rising neighbor gap points to a handover), then learn the effect of actions from logged outcomes, introduced cautiously and with guardrails. Two techniques fit this step:
+  - **Uplift modeling** (also called incremental or causal-effect modeling) estimates, for each case, **how much an action changes the outcome compared with not acting**: `uplift = P(RLF | no action) - P(RLF | action)`.
+    - **How it works:** it is learned from logged data in which similar cases received the action and others did not (a control group). Either one model is trained per group and the two predictions are subtracted, or a single model takes the action as an input and is evaluated with and without it.
+    - **Example:** a handover trigger might lower the RLF probability of one at-risk UE from 40% to 15% (uplift 25 points) and that of another from 10% to 9% (uplift 1 point). Acting on the first is worthwhile and on the second is not, even though both are at risk. A plain RLF predictor cannot tell them apart.
+    - **What it needs:** a control group or randomized assignment of the action. Without it the estimate is misleading, because actions are usually taken on the riskiest UEs, which makes them look harmful. It is trained offline, in batches, and its score ranks where to act.
+  - **Contextual bandits** are an **online decision method** that learns which action to pick in which situation, by trying actions and observing the results. At each decision the system:
+    1. Sees a **context**: the alert score, the driving KPIs, the cell load.
+    2. Picks one **action** from a small set (trigger a handover, change a mobility parameter, do nothing).
+    3. Observes a **reward**, for example the RLF was avoided and no protected KPI got worse.
+    4. Updates its policy from the logged contexts, actions and rewards.
+    - **Explore versus exploit:** it mostly picks the action that looks best so far, but sometimes tries another to keep learning (for example epsilon-greedy or Thompson sampling). In a live network, exploring means occasionally applying a worse action, so keep the exploration share small and limit it to low-risk actions and to scopes with guardrails.
+    - **Limits:** it looks at the immediate reward of each decision, not at sequences of actions (that would be reinforcement learning). The name comes from the "multi-armed bandit" problem, a row of slot machines (one-armed bandits) where you must choose which one to play.
+  - **How they differ:** uplift modeling estimates the effect offline from a control group, and contextual bandits experiment online and adapt as results arrive. Both need the context, action and outcome logs that phase A of the roadmap collects.
 - **Action and outcome labels.** Log each action, its context and the result. Without this the system cannot learn or be audited.
 - **Feedback effects.** Once the loop acts, the data changes (successful actions remove the failures the model was trained to predict). Retraining must account for this, for example by keeping control groups or by logging whether an action was applied.
 - **Confidence and uncertainty.** Act automatically only above a calibrated confidence, and route lower-confidence alerts to a human.
@@ -1494,7 +1506,7 @@ An automated loop can make a network change faster than a human could, so safety
 
 - **Authority versus trust.** Real-data accuracy is not established; moving past level 1 before it is would risk harming the network. Even on synthetic data at a 30 s horizon, the supervised models flag only about 22% of the positive rows and catch 64% to 71% of the RLF events at a 1% false-alarm budget, and about 11% of failures are sudden. The loop must never assume that a failure was prevented.
 - **Threshold drift.** The threshold is set on past data, and its false-alarm rate moved between 0.60% and 1.33% across the models and test splits. Live networks drift more, so the quality gates and periodic recalibration are part of the design.
-- **Interactions with other automation.** SON functions and other xApps and rApps may change the same parameters; conflict mitigation is a standards and vendor topic, not only a local one.
+- **Interactions with other automation.** SON (Self-Organizing Networks, the 3GPP functions that configure, optimize and heal the network automatically) functions and other xApps and rApps may change the same parameters; conflict mitigation is a standards and vendor topic, not only a local one.
 - **Vendor support for control.** E2-RC and A1 support varies by vendor and release; many networks allow only O1 changes, which limits the loop to the slower time scale.
 - **Causal uncertainty.** A prediction does not tell whether an action helps; claiming benefit requires experiments with control groups.
 - **Accountability.** Define who is responsible for automated changes, how they are reviewed and how the operator audits them.
